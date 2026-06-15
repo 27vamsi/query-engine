@@ -11,7 +11,7 @@ COPY pyproject.toml ./
 RUN pip install --upgrade pip && pip install \
     "django>=5.0" "djangorestframework>=3.15" "sqlglot>=25.0" "pyarrow>=16.0" \
     "polars>=1.0" "celery>=5.4" "redis>=5.0" \
-    "psycopg[binary]>=3.2" "gunicorn>=22.0" "duckdb>=1.0"
+    "psycopg[binary]>=3.2" "gunicorn>=22.0" "duckdb>=1.0" "whitenoise>=6.0"
 
 COPY . .
 
