@@ -44,9 +44,9 @@ services:
              gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
     environment: &engine_env
       DJANGO_SETTINGS_MODULE: config.settings.prod
-      DJANGO_DEBUG: "true"
-      DJANGO_SECRET_KEY: docker-dev-secret
-      DJANGO_ALLOWED_HOSTS: "*"
+      DJANGO_DEBUG: "${DJANGO_DEBUG:-true}"
+      DJANGO_SECRET_KEY: "${DJANGO_SECRET_KEY:-docker-dev-secret}"
+      DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:-*}"
       POSTGRES_HOST: postgres
       POSTGRES_DB: queryengine
       POSTGRES_USER: queryengine

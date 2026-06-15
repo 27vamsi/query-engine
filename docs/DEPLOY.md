@@ -189,6 +189,76 @@ Fly gives you HTTPS on `*.fly.dev` for free, so there's no Caddy step here.
 
 ---
 
+## Option C: AWS EC2 + S3
+
+The same Compose stack on an EC2 box, with real S3 in place of MinIO since you're
+already inside AWS. A `t3.micro` is free for the first 12 months but only has 1 GB
+of RAM, which is tight for five containers; `t3.small` (2 GB) is the comfortable
+pick and is paid. Unlike Oracle, this is not free forever, plan for a small
+monthly bill after the trial.
+
+### 1. Launch the instance
+
+- EC2 -> Launch Instance.
+- AMI: **Ubuntu 22.04**.
+- Type: **t3.small** (or `t3.micro` for the free tier with a smaller dataset).
+- Create or pick a key pair for SSH.
+- Allocate and associate an **Elastic IP** so the address survives reboots.
+
+### 2. Security group
+
+Inbound rules:
+
+- TCP `22` from **your IP only**
+- TCP `80` and `443` from `0.0.0.0/0`
+- TCP `8000` from `0.0.0.0/0` (only needed before you put TLS in front)
+
+No iptables step here, the AWS Ubuntu AMI doesn't ship the restrictive firewall
+Oracle's does.
+
+### 3. Install Docker and clone
+
+```bash
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER          # log out and back in
+git clone <your-repo-url> query-engine
+cd query-engine
+cp .env.example .env
+```
+
+### 4. Use S3 instead of MinIO
+
+Create a bucket and an IAM user with access to it, then drop the `minio` service
+from `docker-compose.yml` (delete the `minio:` service block, the `minio_data:`
+volume, and the `minio` lines under each `depends_on`). In `.env` set:
+
+```
+DJANGO_SECRET_KEY=<openssl rand -hex 32>
+DJANGO_DEBUG=false
+DJANGO_ALLOWED_HOSTS=<elastic-ip-or-domain>
+AWS_ACCESS_KEY_ID=<iam-key>
+AWS_SECRET_ACCESS_KEY=<iam-secret>
+AWS_REGION=<bucket-region>
+```
+
+Leave `AWS_ENDPOINT_URL` **unset** so PyArrow talks to AWS S3 directly instead of
+MinIO. The engine code doesn't change, it's the same S3 code path.
+
+### 5. Bring it up and seed
+
+```bash
+docker compose up -d --build
+python scripts/upload_minio.py --src ./data/trips --bucket <bucket> --prefix trips
+docker compose exec web python manage.py register_dataset trips s3://<bucket>/trips
+docker compose exec web python manage.py createsuperuser
+```
+
+(`upload_minio.py` is just an S3 client; with `AWS_ENDPOINT_URL` unset it uploads
+straight to AWS.) Hit `http://<elastic-ip>:8000`. For HTTPS, point a domain at the
+Elastic IP and add the Caddy service exactly as in Option A's TLS step.
+
+---
+
 ## Which one
 
 If you want it genuinely free and don't mind running a VM, Oracle Cloud is the
