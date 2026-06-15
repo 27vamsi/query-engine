@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Run #{{ run.id }} · Query Engine{% endblock %}
+{% block content %}
+<div class="panel">
+  <h2>Query run #{{ run.id }} · <a href="{% url 'dataset_detail' run.dataset.id %}">{{ run.dataset.name }}</a></h2>
+  <pre>{{ run.sql }}</pre>
+</div>
+
+<div id="run-status"
+     {% if run.status == 'pending' or run.status == 'running' %}
+     hx-get="{% url 'query_run_status' run.id %}"
+     hx-trigger="load delay:600ms"
+     hx-swap="outerHTML"
+     {% endif %}>
+  {% include "_run_status.html" %}
+</div>
+{% endblock %}

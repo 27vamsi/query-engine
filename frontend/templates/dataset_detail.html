@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% load dict_extras %}
+{% block title %}{{ dataset.name }} · Query Engine{% endblock %}
+{% block content %}
+<div class="panel">
+  <h2>{{ dataset.name }}</h2>
+  <p class="muted">{{ dataset.uri }} · {{ dataset.file_count }} files · {{ dataset.total_bytes }} bytes</p>
+  {% if dataset.description %}<p>{{ dataset.description }}</p>{% endif %}
+</div>
+
+<div class="panel">
+  <h2>Run a query</h2>
+  <form method="post" action="{% url 'submit_query' %}">
+    {% csrf_token %}
+    <input type="hidden" name="dataset" value="{{ dataset.id }}">
+    <textarea name="sql" spellcheck="false">{{ sample_sql }}</textarea>
+    <div style="margin-top:10px"><button class="primary" type="submit">Execute</button></div>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Schema</h2>
+  <table>
+    <tr><th>Column</th><th>Type</th><th>Kind</th><th>min</th><th>max</th></tr>
+    {% for c in columns %}
+    <tr>
+      <td>{{ c.name }}</td>
+      <td class="muted">{{ c.arrow_type }}</td>
+      <td>{% if c.is_partition %}<span class="pill running">partition</span>{% else %}data{% endif %}</td>
+      <td class="muted">{{ stats|get_item:c.name|get_item:"min"|default:"" }}</td>
+      <td class="muted">{{ stats|get_item:c.name|get_item:"max"|default:"" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Partitions ({{ partitions|length }})</h2>
+  <table>
+    <tr><th>Values</th><th>Bytes</th></tr>
+    {% for p in partitions %}
+    <tr><td>{{ p.values }}</td><td class="muted">{{ p.size_bytes }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

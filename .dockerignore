@@ -1,0 +1,10 @@
+.venv/
+data/
+*.sqlite3
+db.sqlite3
+__pycache__/
+*.pyc
+.git/
+.pytest_cache/
+staticfiles/
+benchmark_results.json

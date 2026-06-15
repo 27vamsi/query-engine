@@ -1,0 +1,91 @@
+{
+  "engine": {
+    "agg_by_region": {
+      "ms": 32.5,
+      "metrics": {
+        "total_files": 15,
+        "files_scanned": 15,
+        "files_pruned": 0,
+        "total_row_groups": 120,
+        "row_groups_scanned": 120,
+        "row_groups_pruned": 0,
+        "bytes_scanned": 3211768,
+        "bytes_total": 10038584,
+        "rows_scanned": 300000
+      }
+    },
+    "filtered_agg": {
+      "ms": 57.2,
+      "metrics": {
+        "total_files": 15,
+        "files_scanned": 15,
+        "files_pruned": 0,
+        "total_row_groups": 120,
+        "row_groups_scanned": 120,
+        "row_groups_pruned": 0,
+        "bytes_scanned": 3117820,
+        "bytes_total": 10038584,
+        "rows_scanned": 300000
+      }
+    },
+    "selective_scan": {
+      "ms": 13.6,
+      "metrics": {
+        "total_files": 15,
+        "files_scanned": 15,
+        "files_pruned": 0,
+        "total_row_groups": 120,
+        "row_groups_scanned": 20,
+        "row_groups_pruned": 100,
+        "bytes_scanned": 277512,
+        "bytes_total": 1673185,
+        "rows_scanned": 50000
+      }
+    },
+    "partition_filter": {
+      "ms": 11.5,
+      "metrics": {
+        "total_files": 15,
+        "files_scanned": 5,
+        "files_pruned": 10,
+        "total_row_groups": 40,
+        "row_groups_scanned": 40,
+        "row_groups_pruned": 0,
+        "bytes_scanned": 591264,
+        "bytes_total": 7761111,
+        "rows_scanned": 100000
+      }
+    },
+    "wide_group": {
+      "ms": 50.7,
+      "metrics": {
+        "total_files": 15,
+        "files_scanned": 15,
+        "files_pruned": 0,
+        "total_row_groups": 120,
+        "row_groups_scanned": 120,
+        "row_groups_pruned": 0,
+        "bytes_scanned": 1860253,
+        "bytes_total": 10038584,
+        "rows_scanned": 300000
+      }
+    }
+  },
+  "duckdb": {
+    "agg_by_region": {
+      "ms": 10.9
+    },
+    "filtered_agg": {
+      "ms": 14.6
+    },
+    "selective_scan": {
+      "ms": 6.6
+    },
+    "partition_filter": {
+      "ms": 6.8
+    },
+    "wide_group": {
+      "ms": 14.5
+    }
+  }
+}
