@@ -1,0 +1,276 @@
+/* Reset + bare-element defaults. No named components here. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scrollbar-color: var(--c-border-hi) transparent;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--c-canvas);
+  color: var(--c-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  font-weight: var(--fw-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv05" 1, "ss03" 1;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.015em;
+  color: var(--c-text);
+}
+
+h1 { font-size: var(--fs-2xl); }
+h2 { font-size: var(--fs-xl); }
+h3 { font-size: var(--fs-lg); }
+h4 { font-size: var(--fs-base); }
+
+p {
+  margin: 0 0 var(--sp-3);
+}
+
+p:last-child {
+  margin-bottom: 0;
+}
+
+a {
+  color: var(--c-accent);
+  text-decoration: none;
+  transition: color var(--t-fast) var(--ease);
+}
+
+a:hover {
+  color: var(--c-accent-hi);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+ul, ol {
+  margin: 0 0 var(--sp-3);
+  padding-left: var(--sp-5);
+}
+
+li {
+  margin-bottom: var(--sp-1);
+}
+
+strong, b {
+  font-weight: var(--fw-semibold);
+  color: var(--c-text);
+}
+
+em {
+  font-style: italic;
+}
+
+small {
+  font-size: var(--fs-sm);
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--c-border);
+  margin: var(--sp-6) 0;
+}
+
+img, svg {
+  max-width: 100%;
+}
+
+/* --- Code ---------------------------------------------------------------- */
+
+code, kbd, samp, pre {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-variant-ligatures: none;
+}
+
+code {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-soft);
+  border-radius: var(--r-xs);
+  padding: 1px 5px;
+  color: var(--c-accent-hi);
+  white-space: nowrap;
+}
+
+pre {
+  margin: 0;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  padding: var(--sp-3) var(--sp-4);
+  overflow: auto;
+  line-height: var(--lh-snug);
+  color: var(--c-text-dim);
+  tab-size: 2;
+}
+
+pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  white-space: pre;
+}
+
+kbd {
+  background: var(--c-raised);
+  border: 1px solid var(--c-border-hi);
+  border-bottom-width: 2px;
+  border-radius: var(--r-xs);
+  padding: 1px 5px;
+  font-size: var(--fs-xs);
+  color: var(--c-text-dim);
+  white-space: nowrap;
+}
+
+/* --- Forms --------------------------------------------------------------- */
+
+input, select, textarea, button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+textarea {
+  resize: vertical;
+}
+
+/* --- Tables -------------------------------------------------------------- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* --- Focus --------------------------------------------------------------- */
+/* Visible only for keyboard users, but always visible enough to pass
+   contrast. Never remove without replacing. */
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+/* --- Scrollbars ---------------------------------------------------------- */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--c-border-hi);
+  border-radius: var(--r-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--c-text-faint);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* --- Selection ----------------------------------------------------------- */
+
+::selection {
+  background: var(--c-accent-dim);
+  color: #fff;
+}
+
+/* --- Utilities ----------------------------------------------------------- */
+/* Deliberately few. Anything used more than a handful of times becomes a
+   real component class in components.css. */
+
+.muted    { color: var(--c-text-mute); }
+.dim      { color: var(--c-text-dim); }
+.mono     { font-family: var(--font-mono); }
+.nums     { font-variant-numeric: tabular-nums; }
+.nowrap   { white-space: nowrap; }
+.caps {
+  text-transform: uppercase;
+  letter-spacing: var(--track-caps);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text-mute);
+}
+
+.t-good { color: var(--c-good); }
+.t-bad  { color: var(--c-bad); }
+.t-warn { color: var(--c-warn); }
+
+.prose {
+  max-width: 72ch;
+  line-height: var(--lh-loose);
+  color: var(--c-text-dim);
+}
+
+.prose strong { color: var(--c-text); }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Skip link: visible once focused. */
+.skip-link {
+  position: absolute;
+  left: var(--sp-3);
+  top: -60px;
+  z-index: var(--z-toast);
+  background: var(--c-accent);
+  color: #07090d;
+  font-weight: var(--fw-semibold);
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-sm);
+  transition: top var(--t-base) var(--ease);
+}
+
+.skip-link:focus {
+  top: var(--sp-3);
+  text-decoration: none;
+}
+
+/* SQL NULL / NaN marker emitted by dict_extras.cell. The filter's output is
+   pinned by tests/test_rendering.py, so the styling has to live here. */
+.null {
+  color: var(--c-text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--track-wide);
+  font-style: normal;
+}

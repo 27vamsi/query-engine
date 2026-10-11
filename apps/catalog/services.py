@@ -101,6 +101,58 @@ def preview_stats(dataset: Dataset, limit: int = 5) -> dict:
     return out
 
 
+def column_profile(dataset: Dataset) -> dict:
+    """Per-column compressed on-disk size from one file's footer.
+
+    This is what makes the column-projection story checkable: it shows which
+    column is actually narrowest on disk, which is the column a COUNT(*)
+    resolves to. Footer-only, one file, so it is cheap enough for a page load
+    -- but it IS live storage I/O, so callers must handle failure.
+
+    Returns {} when the dataset has no registered files.
+    """
+    fs, _ = resolve_fs(dataset.uri)
+    first = dataset.partitions.first()
+    if first is None:
+        return {}
+
+    from apps.engine.parquet_reader import ParquetFileInfo
+
+    info = ParquetFileInfo(path=first.path, size=first.size_bytes, partitions=first.values)
+    groups = read_row_group_metadata(fs, info)
+    if not groups:
+        return {}
+
+    per_column: dict[str, int] = {}
+    for group in groups:
+        for col, size in group.column_byte_size.items():
+            per_column[col] = per_column.get(col, 0) + size
+
+    file_bytes = sum(per_column.values())
+    rows = sum(g.num_rows for g in groups)
+    columns = [
+        {
+            "name": col,
+            "bytes": size,
+            # Share of this file's column bytes, which is what determines how
+            # much a projection actually saves.
+            "pct": round(100 * size / file_bytes, 1) if file_bytes else None,
+            "bytes_per_row": round(size / rows, 2) if rows else None,
+        }
+        for col, size in sorted(per_column.items(), key=lambda kv: -kv[1])
+    ]
+    return {
+        "path": first.path,
+        "row_groups": len(groups),
+        "rows": rows,
+        "file_bytes": file_bytes,
+        "rows_per_group": round(rows / len(groups)) if groups else None,
+        "columns": columns,
+        "widest": columns[0] if columns else None,
+        "narrowest": columns[-1] if columns else None,
+    }
+
+
 def _safe(v):
     try:
         import json

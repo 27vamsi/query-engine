@@ -1,0 +1,8 @@
+{% comment %}
+ctx:
+  status (str, required)  one of QueryRun.Status: pending | running | success | error
+
+The class name is the raw status value, which is what components.css keys on.
+Status comes from a TextChoices field, so it cannot be arbitrary user input.
+{% endcomment %}
+<span class="pill {{ status }}">{{ status }}</span>

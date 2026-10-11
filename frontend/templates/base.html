@@ -1,52 +1,178 @@
-<!doctype html>
+{% load static %}<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>{% block title %}Query Engine{% endblock %}</title>
+  <meta name="description" content="Run analytical SQL directly over Parquet in object storage, and see exactly which bytes the engine avoided reading and why.">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+  <link rel="stylesheet" href="{% static 'css/tokens.css' %}">
+  <link rel="stylesheet" href="{% static 'css/base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/shell.css' %}">
+  <link rel="stylesheet" href="{% static 'css/components.css' %}">
+  <link rel="stylesheet" href="{% static 'css/workspace.css' %}">
+  {% block extra_css %}{% endblock %}
+
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-  <script>mermaid.initialize({ startOnLoad: false, theme: "dark" });</script>
-  <style>
-    :root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --fg:#e6edf3; --muted:#8b949e; --accent:#58a6ff; --good:#3fb950; --bad:#f85149; }
-    * { box-sizing: border-box; }
-    body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
-    a { color:var(--accent); text-decoration:none; }
-    header { padding:14px 24px; border-bottom:1px solid var(--border); display:flex; gap:18px; align-items:center; }
-    header h1 { font-size:16px; margin:0; }
-    main { max-width:1100px; margin:0 auto; padding:24px; }
-    .panel { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:18px; margin-bottom:18px; }
-    h2 { font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 12px; }
-    table { width:100%; border-collapse:collapse; font-size:13px; }
-    th,td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--border); }
-    th { color:var(--muted); font-weight:600; }
-    textarea { width:100%; min-height:120px; background:#0d1117; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:10px; font:13px ui-monospace,monospace; }
-    select,button { background:#21262d; color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:8px 14px; font:13px ui-monospace,monospace; cursor:pointer; }
-    button.primary { background:var(--accent); color:#0d1117; border-color:var(--accent); font-weight:700; }
-    .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
-    .metric { background:#0d1117; border:1px solid var(--border); border-radius:6px; padding:12px; }
-    .metric .v { font-size:20px; font-weight:700; }
-    .metric .k { color:var(--muted); font-size:11px; text-transform:uppercase; }
-    .pill { padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; }
-    .pill.success{background:rgba(63,185,80,.15);color:var(--good);}
-    .pill.error{background:rgba(248,81,73,.15);color:var(--bad);}
-    .pill.running,.pill.pending{background:rgba(88,166,255,.15);color:var(--accent);}
-    pre { background:#0d1117; border:1px solid var(--border); border-radius:6px; padding:12px; overflow:auto; }
-    .muted { color:var(--muted); }
-    .bar { height:8px; background:#0d1117; border-radius:4px; overflow:hidden; border:1px solid var(--border); }
-    .bar > span { display:block; height:100%; background:var(--good); }
-  </style>
+  {% block extra_head %}{% endblock %}
 </head>
-<body>
-  <header>
-    <h1>⚡ Query Engine <span class="muted">over object storage</span></h1>
-    <a href="{% url 'dashboard' %}">Dashboard</a>
-    <a href="/admin/">Admin</a>
-    <a href="/api/catalog/datasets/">API</a>
-  </header>
-  <main>
-    {% if messages %}{% for m in messages %}<div class="panel" style="border-color:var(--bad)">{{ m }}</div>{% endfor %}{% endif %}
-    {% block content %}{% endblock %}
-  </main>
+{% comment %}
+hx-headers puts the CSRF token on every htmx request, and referencing
+csrf_token here guarantees the cookie is set on every page.
+
+Use {% comment %}, not {# #}, for anything spanning more than one line:
+{# #} is single-line only and a multi-line one is emitted verbatim into the
+page instead of being stripped.
+{% endcomment %}
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+<a class="skip-link" href="#main-content">Skip to content</a>
+
+<div class="shell" id="shell">
+  <script>
+    /* Applied before first paint so a collapsed sidebar does not flash open. */
+    (function () {
+      try {
+        if (localStorage.getItem("qe.sidebar.collapsed") === "1") {
+          document.getElementById("shell").classList.add("is-collapsed");
+        }
+      } catch (e) { /* storage blocked; collapse simply is not remembered */ }
+    })();
+  </script>
+
+  <div class="scrim" aria-hidden="true"></div>
+
+  <aside class="sidebar">
+    <a class="sidebar__brand" href="{% url 'dashboard' %}">
+      <span class="sidebar__mark" aria-hidden="true">Q</span>
+      <span class="sidebar__name">Query Engine</span>
+    </a>
+
+    <nav class="sidebar__nav" aria-label="Main">
+      <div class="sidebar__group">
+        <div class="sidebar__group-label">Query</div>
+        <a class="navlink {% if nav == 'overview' %}is-active{% endif %}"
+           href="{% url 'dashboard' %}" {% if nav == 'overview' %}aria-current="page"{% endif %}>
+          <span class="navlink__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 13h5v8H3zM10 3h4v18h-4zM16 9h5v12h-5z"/></svg></span>
+          <span class="navlink__label">Overview</span>
+        </a>
+        <a class="navlink {% if nav == 'workspace' %}is-active{% endif %}"
+           href="{% url 'workspace' %}" {% if nav == 'workspace' %}aria-current="page"{% endif %}>
+          <span class="navlink__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 9l-4 3 4 3M16 9l4 3-4 3M13 6l-2 12"/></svg></span>
+          <span class="navlink__label">SQL Workspace</span>
+        </a>
+      </div>
+
+      <div class="sidebar__group">
+        <div class="sidebar__group-label">Data</div>
+        <a class="navlink {% if nav == 'datasets' %}is-active{% endif %}"
+           href="{% url 'datasets' %}" {% if nav == 'datasets' %}aria-current="page"{% endif %}>
+          <span class="navlink__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg></span>
+          <span class="navlink__label">Datasets</span>
+        </a>
+      </div>
+
+      <div class="sidebar__group">
+        <div class="sidebar__group-label">Observability</div>
+        <a class="navlink {% if nav == 'history' %}is-active{% endif %}"
+           href="{% url 'history' %}" {% if nav == 'history' %}aria-current="page"{% endif %}>
+          <span class="navlink__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg></span>
+          <span class="navlink__label">Query History</span>
+        </a>
+        <a class="navlink {% if nav == 'plans' %}is-active{% endif %}"
+           href="{% url 'plans' %}" {% if nav == 'plans' %}aria-current="page"{% endif %}>
+          <span class="navlink__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="4" rx="1"/><rect x="3" y="17" width="6" height="4" rx="1"/><rect x="15" y="17" width="6" height="4" rx="1"/><path d="M12 7v5M6 17v-3h12v3"/></svg></span>
+          <span class="navlink__label">Query Plans</span>
+        </a>
+        <a class="navlink {% if nav == 'performance' %}is-active{% endif %}"
+           href="{% url 'performance' %}" {% if nav == 'performance' %}aria-current="page"{% endif %}>
+          <span class="navlink__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-6 5 5"/><path d="M3 21h18"/></svg></span>
+          <span class="navlink__label">Performance</span>
+        </a>
+      </div>
+
+      <div class="sidebar__group">
+        <div class="sidebar__group-label">Reference</div>
+        <a class="navlink {% if nav == 'capabilities' %}is-active{% endif %}"
+           href="{% url 'capabilities' %}" {% if nav == 'capabilities' %}aria-current="page"{% endif %}>
+          <span class="navlink__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 016.5 3H20v16H6.5A2.5 2.5 0 004 21.5z"/><path d="M8 7h8M8 11h6"/></svg></span>
+          <span class="navlink__label">Capabilities</span>
+        </a>
+        <a class="navlink" href="/api/catalog/datasets/">
+          <span class="navlink__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.5.5l2-2a5 5 0 00-7-7l-1 1"/><path d="M14 11a5 5 0 00-7.5-.5l-2 2a5 5 0 007 7l1-1"/></svg></span>
+          <span class="navlink__label">REST API</span>
+        </a>
+        <a class="navlink" href="/admin/">
+          <span class="navlink__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7z"/></svg></span>
+          <span class="navlink__label">Admin</span>
+        </a>
+      </div>
+    </nav>
+
+    <div class="sidebar__foot">
+      <button class="sidebar__toggle" type="button" data-sidebar-toggle
+              aria-expanded="true" aria-label="Collapse sidebar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Collapse</span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar__left">
+        <button class="topbar__burger" type="button" data-sidebar-open
+                aria-expanded="false" aria-label="Open navigation">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16"/>
+          </svg>
+        </button>
+        <nav class="crumbs" aria-label="Breadcrumb">
+          {% block breadcrumbs %}
+            <span class="crumbs__current">Overview</span>
+          {% endblock %}
+        </nav>
+      </div>
+      <div class="topbar__right">
+        {% block topbar_actions %}
+        <a class="btn btn--sm btn--primary" href="{% url 'workspace' %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l12 8-12 8z"/></svg>
+          Run a query
+        </a>
+        {% endblock %}
+      </div>
+    </header>
+
+    <main class="{% block page_class %}page{% endblock %}" id="main-content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
+
+{% comment %}
+Django messages are replayed as toasts so the shell has one notification
+surface. A <template> element keeps them out of the rendered flow.
+{% endcomment %}
+{% if messages %}
+<template id="queued-messages">
+  {% for m in messages %}
+  <div data-message="{{ m }}"
+       data-tone="{% if m.tags == 'error' %}bad{% elif m.tags == 'success' %}good{% elif m.tags == 'warning' %}warn{% endif %}"></div>
+  {% endfor %}
+</template>
+{% endif %}
+
+<script src="{% static 'js/shell.js' %}"></script>
+<script src="{% static 'js/plan.js' %}"></script>
+{% block extra_js %}{% endblock %}
 </body>
 </html>

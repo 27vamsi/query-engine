@@ -46,3 +46,28 @@ def test_column_pruning_reduces_bytes(trips_dataset):
     one_col = run_sql("SELECT SUM(price) AS s FROM trips", trips_dataset, max_workers=1)
     all_cols = run_sql("SELECT * FROM trips", trips_dataset, max_workers=1)
     assert one_col.metrics["bytes_scanned"] < all_cols.metrics["bytes_scanned"]
+
+
+def test_count_star_reads_the_narrowest_column(trips_dataset, oracle):
+    """A COUNT(*) references no column, so it should read the cheapest one.
+
+    It still has to read *something* to know how many rows there are, but
+    picking the first declared column (a wide monotonic `trip_id`) instead of
+    the narrowest one costs an order of magnitude more I/O for the same answer.
+    """
+    sql = "SELECT COUNT(*) AS n FROM trips"
+    count = run_sql(sql, trips_dataset, max_workers=1)
+    assert_matches(count, oracle, sql)
+    assert count.metrics["columns_projected"] == 1
+
+    widest = run_sql("SELECT SUM(trip_id) AS s FROM trips", trips_dataset, max_workers=1)
+    assert count.metrics["bytes_scanned"] < widest.metrics["bytes_scanned"]
+
+
+def test_group_by_partition_column_reads_no_data_column(trips_dataset, oracle):
+    """`region` lives in the path, so grouping on it needs no data column."""
+    sql = "SELECT region, COUNT(*) AS n FROM trips GROUP BY region"
+    result = run_sql(sql, trips_dataset, max_workers=1)
+    assert_matches(result, oracle, sql)
+    assert result.metrics["columns_projected"] == 1
+    assert "row counts only" not in result.plan_text  # resolved by now

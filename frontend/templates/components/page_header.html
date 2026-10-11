@@ -1,0 +1,22 @@
+{% comment %}
+Page title block.
+
+ctx:
+  title     (str, required)  the page heading
+  subtitle  (str, optional)  one sentence of orientation under the title
+  eyebrow   (str, optional)  small uppercase label above the title
+
+Actions are NOT a context var: pass them with
+  {% include "components/page_header.html" with title="..." %}
+and put buttons in the page's own .page__actions, or override the
+`page_actions` block on the page. Keeping markup out of context vars means
+nothing here can bypass autoescaping.
+{% endcomment %}
+<div class="page__header">
+  <div class="page__heading">
+    {% if eyebrow %}<div class="hero__eyebrow">{{ eyebrow }}</div>{% endif %}
+    <h1 class="page__title">{{ title }}</h1>
+    {% if subtitle %}<p class="page__subtitle">{{ subtitle }}</p>{% endif %}
+  </div>
+  {% if actions %}<div class="page__actions">{{ actions }}</div>{% endif %}
+</div>

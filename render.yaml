@@ -1,0 +1,56 @@
+# Render blueprint. Create a new Blueprint Instance from the repo and Render
+# reads this file; nothing needs configuring in the dashboard except the value
+# of DJANGO_SECRET_KEY, which is generated for you below.
+#
+# Deliberately a single web service with SQLite: there is no Postgres and no
+# Redis here. Celery falls back to eager (inline) execution when REDIS_URL is
+# unset, which is the correct shape for a demo -- a query runs in the request
+# and the htmx poller sees it finish immediately. Adding a managed Postgres and
+# a worker is a two-line change (see the commented block at the bottom).
+services:
+  - type: web
+    name: query-engine
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: "./build.sh"
+    # 1 worker, 2 threads: the engine itself forks a process pool per query, so
+    # stacking gunicorn workers on top multiplies memory by the same factor and
+    # OOMs a 512 MB instance. Concurrency here comes from threads waiting on
+    # I/O, not from more interpreters.
+    startCommand: "gunicorn config.wsgi:application --workers 1 --threads 2 --timeout 120"
+    healthCheckPath: /
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.prod
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      # Caps the engine's process pool. Unset means "one per CPU", which on a
+      # shared free instance means several interpreters each holding Arrow
+      # buffers -- the most likely cause of an out-of-memory restart.
+      - key: ENGINE_MAX_WORKERS
+        value: "2"
+      - key: SEED_ROWS
+        value: "300000"
+      # ALLOWED_HOSTS and CSRF_TRUSTED_ORIGINS are derived in settings/prod.py
+      # from RENDER_EXTERNAL_HOSTNAME, which Render injects automatically.
+
+# --- Scaling up later -----------------------------------------------------
+# To move off SQLite and run queries on a real worker, uncomment the database
+# and worker below and add POSTGRES_* / REDIS_URL to the web service's envVars.
+# CELERY_TASK_ALWAYS_EAGER flips itself off as soon as REDIS_URL is present.
+#
+# databases:
+#   - name: query-engine-db
+#     plan: free
+#
+# services:
+#   - type: worker
+#     name: query-engine-worker
+#     runtime: python
+#     buildCommand: "pip install -e ."
+#     startCommand: "celery -A config worker -l info --concurrency 1"

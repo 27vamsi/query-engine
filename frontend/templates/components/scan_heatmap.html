@@ -1,0 +1,34 @@
+{% comment %}
+Row-group heatmap: one tile per Parquet row-group, read vs proven irrelevant.
+
+ctx:
+  run (QueryRun, required)  uses run.scan_map and run.metrics
+
+run.scan_map returns [] past QueryRun.HEATMAP_FILE_LIMIT files rather than
+truncating, so this never shows a partial picture that looks like the whole
+one. A pruned file has no tile count at all -- its footer was never read, so
+its row-group count is genuinely unknown.
+{% endcomment %}
+{% if run.scan_map %}
+<div class="heat">
+  {% for f in run.scan_map %}
+  <div class="file">
+    <div class="fname" title="{{ f.name }}">{{ f.name }}</div>
+    {% if f.pruned %}
+      <div class="closed">never opened</div>
+    {% else %}
+      <div class="tiles">
+        {% for read in f.groups %}<i class="{% if read %}read{% else %}skip{% endif %}"></i>{% endfor %}
+      </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+<div class="legend">
+  <span><i style="background:var(--viz-read)"></i> read</span>
+  <span><i style="background:var(--viz-skip);border:1px solid var(--c-border)"></i>
+    skipped &mdash; footer stats proved no match</span>
+  <span><i style="background:transparent;border:1px dashed var(--c-text-faint)"></i>
+    file never opened, so its row-group count is unknown by design</span>
+</div>
+{% endif %}

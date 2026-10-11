@@ -84,7 +84,10 @@ def _partial_aggregate(
         elif func == "count":
             exprs.append(pl.col(column).count().alias(f"{output}__cnt"))
         elif func == "sum":
+            # The companion count distinguishes "summed nothing" (SQL: NULL)
+            # from "summed to zero" -- polars returns 0 for both.
             exprs.append(pl.col(column).sum().alias(f"{output}__sum"))
+            exprs.append(pl.col(column).count().alias(f"{output}__sumcnt"))
         elif func == "min":
             exprs.append(pl.col(column).min().alias(f"{output}__min"))
         elif func == "max":
@@ -114,14 +117,28 @@ def _merge_aggregate(
         if a.func == "count":
             merge_exprs.append(pl.col(f"{o}__cnt").sum().alias(o))
         elif a.func == "sum":
-            merge_exprs.append(pl.col(f"{o}__sum").sum().alias(o))
+            non_null = pl.col(f"{o}__sumcnt").sum()
+            merge_exprs.append(
+                pl.when(non_null > 0)
+                .then(pl.col(f"{o}__sum").sum())
+                .otherwise(None)
+                .alias(o)
+            )
         elif a.func == "min":
             merge_exprs.append(pl.col(f"{o}__min").min().alias(o))
         elif a.func == "max":
             merge_exprs.append(pl.col(f"{o}__max").max().alias(o))
         elif a.func == "avg":
+            # SQL says AVG over no non-null values is NULL, not 0/0. Without the
+            # guard the sum/count reconstruction yields NaN for a group whose
+            # every value was NULL, which silently diverges from every real
+            # engine.
+            non_null = pl.col(f"{o}__avgcnt").sum()
             merge_exprs.append(
-                (pl.col(f"{o}__avgsum").sum() / pl.col(f"{o}__avgcnt").sum()).alias(o)
+                pl.when(non_null > 0)
+                .then(pl.col(f"{o}__avgsum").sum() / non_null)
+                .otherwise(None)
+                .alias(o)
             )
 
     if combined.is_empty():

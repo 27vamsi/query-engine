@@ -131,14 +131,12 @@ def _pushdown_projection(plan: LogicalNode, ctx: OptimizerContext) -> None:
     # Only project columns that physically exist in files (exclude partition
     # columns, which come from the path, not the row data).
     data_cols = [c for c in ctx.all_columns if c not in set(ctx.partition_columns)]
-    projection = [c for c in data_cols if c in needed]
-
-    # No referenced data columns (e.g. COUNT(*)) -> read the single cheapest
-    # column so row counts are still correct but I/O stays minimal.
-    if not projection:
-        projection = data_cols[:1] if data_cols else None
-
-    scan.projection = projection
+    # An empty projection means "no data column is referenced at all" -- e.g.
+    # COUNT(*), or a GROUP BY whose only key is a partition column. Row counts
+    # still have to come from somewhere, so exactly one column gets read, but
+    # *which* one depends on on-disk sizes the optimizer cannot see. Physical
+    # planning resolves it from the Parquet footer.
+    scan.projection = [c for c in data_cols if c in needed]
 
 
 def _columns_in_expr(expr_sql: str, all_columns: list[str]) -> set[str]:

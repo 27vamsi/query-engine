@@ -31,10 +31,14 @@ def test_filter_node_removed_after_pushdown():
     assert not [n for n in walk(plan) if isinstance(n, Filter)]
 
 
-def test_count_star_reads_one_cheap_column():
+def test_count_star_references_no_data_column():
+    """`[]` means "nothing referenced", which is not the same as `None` ("all").
+
+    Physical planning turns the empty projection into the narrowest column in
+    the footer; the optimizer must not collapse it to a full scan.
+    """
     scan = find_scan(_opt("SELECT COUNT(*) AS n FROM ds"))
-    assert scan.projection is not None
-    assert len(scan.projection) == 1
+    assert scan.projection == []
 
 
 def test_row_group_skip_decisions():

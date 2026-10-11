@@ -1,0 +1,32 @@
+{% comment %}
+One number with a label.
+
+ctx:
+  label     (str, required)
+  value     (any, optional)  omit / pass None to render the "Not reported" state
+  unit      (str, optional)  rendered smaller next to the value (ms, %, MB)
+  sub       (str, optional)  one line of explanation under the value
+  sub_num   (any, optional)  renders as "of <sub_num> <sub_label>" under the value
+  sub_label (str, optional)  noun for sub_num
+  tone      (str, optional)  good | bad | warn | accent
+
+A metric the backend does not expose renders as "Not reported", never as 0 --
+a fabricated zero reads as a real measurement.
+{% endcomment %}
+{% if value is None %}
+<div class="metric metric--na">
+  <span class="metric__label">{{ label }}</span>
+  <span class="metric__value">Not reported</span>
+  {% if sub %}<span class="metric__sub">{{ sub }}</span>{% endif %}
+</div>
+{% else %}
+<div class="metric {% if tone %}metric--{{ tone }}{% endif %}">
+  <span class="metric__label">{{ label }}</span>
+  <span class="metric__value">{{ value }}{% if unit %}<span class="metric__unit">{{ unit }}</span>{% endif %}</span>
+  {% if sub %}
+    <span class="metric__sub">{{ sub }}</span>
+  {% elif sub_num is not None %}
+    <span class="metric__sub">of {{ sub_num }} {{ sub_label }}</span>
+  {% endif %}
+</div>
+{% endif %}

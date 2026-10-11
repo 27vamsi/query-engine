@@ -1,0 +1,203 @@
+{% comment %}
+htmx polling partial for one QueryRun. Rendered directly by
+`query_run_status`, so it MUST stay standalone-renderable: it may not depend
+on anything from an enclosing template, and it loads its own tag libraries.
+
+ctx:
+  run     (QueryRun, required)
+  done    (bool, required)   terminal status; when false this node self-polls
+  columns (list[str], optional) run.result_columns
+  oob     (bool, optional)   also emit an out-of-band swap for #insights-host
+
+This element owns id="run-status". Nothing may wrap it in a second element
+with the same id, or the two collide until the first swap lands.
+
+While a run is pending the node replaces itself every 700ms, so it must
+contain nothing that is expensive or stateful to re-create. The tabs only
+exist in the terminal render, by which point polling has stopped.
+
+There is deliberately no inline <script> here: plan.js and shell.js re-init
+swapped content from one delegated htmx:afterSwap listener, guarded so a
+re-swap cannot double-render a diagram.
+{% endcomment %}
+{% load dict_extras %}
+<div id="run-status"
+     {% if not done %}
+     hx-get="{% url 'query_run_status' run.id %}"
+     hx-trigger="load delay:700ms"
+     hx-swap="outerHTML"
+     {% endif %}>
+
+  <div class="results__status">
+    {% include "components/status_pill.html" with status=run.status %}
+    {% if done %}
+      <span class="run-meta">
+        {% if run.duration_ms is not None %}<span><b class="nums">{{ run.duration_ms }} ms</b></span>{% endif %}
+        {% if run.rows_returned is not None %}<span>{{ run.rows_returned }} row{{ run.rows_returned|pluralize }}</span>{% endif %}
+        {% if run.scan_ratio is not None %}<span>{{ run.scan_ratio }}% of dataset bytes read</span>{% endif %}
+      </span>
+    {% else %}
+      <span class="spinner" aria-hidden="true"></span>
+      <span class="muted">Executing&hellip;
+        <span class="nums" data-elapsed-from="{{ run.created_at|date:'U' }}">0.0s</span>
+      </span>
+    {% endif %}
+    <span class="spacer"></span>
+    <a class="btn btn--sm btn--ghost" href="{% url 'query_run' run.id %}">
+      Run #{{ run.id }} details
+    </a>
+  </div>
+
+  {% if not done %}
+  <div class="results__scroll">
+    <div class="stack">
+      <div class="skel" style="width:40%"></div>
+      <div class="skel" style="width:85%;height:70px"></div>
+      <div class="skel" style="width:65%"></div>
+    </div>
+    <p class="muted" style="margin-top:var(--sp-4);font-size:var(--fs-sm)">
+      Planning, pruning and scanning. This panel refreshes itself until the run finishes.
+    </p>
+  </div>
+  {% endif %}
+
+  {% if run.status == 'error' %}
+  <div class="results__scroll">
+    <div class="errbox">
+      <div class="errbox__title">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01" stroke-linecap="round"/></svg>
+        Query failed
+      </div>
+      <pre>{{ run.error }}</pre>
+    </div>
+    <div class="row" style="margin-top:var(--sp-4)">
+      <form method="post" action="{% url 'rerun_query' run.id %}">
+        {% csrf_token %}
+        <button class="btn btn--sm btn--primary" type="submit">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1015.5-6.3M21 4v5h-5" stroke-linecap="round"/></svg>
+          Rerun query
+        </button>
+      </form>
+      <span class="muted" style="font-size:var(--fs-sm)">
+        Reruns the same SQL against the same dataset on the current code.
+      </span>
+    </div>
+    {% if run.sql %}
+    <div style="margin-top:var(--sp-5)">
+      {% include "components/sql_block.html" with sql=run.sql label="SQL that failed" %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if run.status == 'success' %}
+  <div class="results__tabs">
+    <div class="tabs" role="tablist" aria-label="Run output" data-tabs>
+      <button class="tab" type="button" role="tab" id="t-res-{{ run.id }}"
+              aria-controls="p-res-{{ run.id }}" aria-selected="true">
+        Results
+        <span class="tab__count">{{ run.result_preview|length }}</span>
+      </button>
+      <button class="tab" type="button" role="tab" id="t-plan-{{ run.id }}"
+              aria-controls="p-plan-{{ run.id }}" aria-selected="false">Execution plan</button>
+      <button class="tab" type="button" role="tab" id="t-perf-{{ run.id }}"
+              aria-controls="p-perf-{{ run.id }}" aria-selected="false">Scan breakdown</button>
+      <button class="tab" type="button" role="tab" id="t-raw-{{ run.id }}"
+              aria-controls="p-raw-{{ run.id }}" aria-selected="false">Raw metrics</button>
+    </div>
+  </div>
+
+  <div class="results__scroll">
+    <div class="tabpanel" role="tabpanel" id="p-res-{{ run.id }}" aria-labelledby="t-res-{{ run.id }}" tabindex="0">
+      {% comment %}
+      Raw values for export travel via json_script, so nothing from the
+      result set is ever parsed as JS.
+      {% endcomment %}
+      {{ export_payload|json_script:export_dom_id }}
+      {% include "components/result_grid.html" with columns=columns rows=run.result_preview total=run.rows_returned export_id=export_dom_id export_name=export_name %}
+    </div>
+
+    <div class="tabpanel" role="tabpanel" id="p-plan-{{ run.id }}" aria-labelledby="t-plan-{{ run.id }}" tabindex="0" hidden>
+      <p class="muted" style="margin-bottom:var(--sp-4);font-size:var(--fs-sm);max-width:72ch">
+        The plan after optimization, which is what actually executed &mdash; projection and
+        predicate pushdown have already been applied, so the Scan node shows the columns and
+        filters it really used.
+      </p>
+      {% include "components/plan_diagram.html" with plan_mermaid=run.plan_mermaid plan_text=run.plan_text %}
+    </div>
+
+    <div class="tabpanel" role="tabpanel" id="p-perf-{{ run.id }}" aria-labelledby="t-perf-{{ run.id }}" tabindex="0" hidden>
+      <div class="stack">
+        {% if run.scan_stages %}
+        <div class="panel panel--quiet">
+          <h2>Where the bytes went</h2>
+          {% include "components/scan_waterfall.html" with run=run %}
+        </div>
+        {% endif %}
+        {% if run.scan_map %}
+        <div class="panel panel--quiet">
+          <h2>Row-group map
+            <span class="muted">({{ run.metrics.row_groups_scanned }} of
+              {{ run.metrics.total_row_groups }} read)</span>
+          </h2>
+          {% include "components/scan_heatmap.html" with run=run %}
+        </div>
+        {% endif %}
+        {% if not run.scan_stages and not run.scan_map %}
+          {% include "components/empty_state.html" with inline=True title="No scan breakdown for this run" body="Byte accounting is recorded per scan. This run did not report one." %}
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="tabpanel" role="tabpanel" id="p-raw-{{ run.id }}" aria-labelledby="t-raw-{{ run.id }}" tabindex="0" hidden>
+      <div class="panel panel--quiet">
+        <h2>Scan metrics <span class="muted">as recorded by the engine</span></h2>
+        <dl class="kv">
+          <dt>total_files</dt><dd>{{ run.metrics.total_files|default_if_none:"—" }}</dd>
+          <dt>files_scanned</dt><dd>{{ run.metrics.files_scanned|default_if_none:"—" }}</dd>
+          <dt>files_pruned</dt><dd>{{ run.metrics.files_pruned|default_if_none:"—" }}</dd>
+          <dt>total_row_groups</dt><dd>{{ run.metrics.total_row_groups|default_if_none:"—" }}</dd>
+          <dt>row_groups_scanned</dt><dd>{{ run.metrics.row_groups_scanned|default_if_none:"—" }}</dd>
+          <dt>row_groups_pruned</dt><dd>{{ run.metrics.row_groups_pruned|default_if_none:"—" }}</dd>
+          <dt>rows_scanned</dt><dd>{{ run.metrics.rows_scanned|default_if_none:"—" }}</dd>
+          <dt>columns_projected</dt><dd>{{ run.metrics.columns_projected|default_if_none:"—" }}</dd>
+          <dt>columns_total</dt><dd>{{ run.metrics.columns_total|default_if_none:"—" }}</dd>
+          <dt>bytes_scanned</dt><dd>{{ run.metrics.bytes_scanned|default_if_none:"—" }}</dd>
+          <dt>bytes_total</dt><dd>{{ run.metrics.bytes_total|default_if_none:"—" }}</dd>
+          <dt>bytes_pruned_files</dt><dd>{{ run.metrics.bytes_pruned_files|default_if_none:"—" }}</dd>
+          <dt>bytes_pruned_row_groups</dt><dd>{{ run.metrics.bytes_pruned_row_groups|default_if_none:"—" }}</dd>
+          <dt>bytes_unprojected</dt><dd>{{ run.metrics.bytes_unprojected|default_if_none:"—" }}</dd>
+        </dl>
+        <p class="panel__foot">
+          Byte counts are compressed on-disk bytes on both sides of the ratio.
+          <code>bytes_total</code> covers every row-group including the pruned ones, plus the
+          file size of files that were never opened.
+        </p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% if oob %}
+{% comment %}
+Out-of-band swap: one response updates both the results pane and the
+insights rail, so the workspace needs only a single polling region.
+Only emitted for htmx responses -- a full-page include passes oob=False,
+where this would otherwise render as a stray duplicate panel.
+{% endcomment %}
+<div id="insights-host" hx-swap-oob="true">
+  {% if run.status == 'success' or run.status == 'error' %}
+    {% include "components/execution_insights.html" with run=run compact=True %}
+  {% else %}
+    <div class="insights">
+      <div class="insights__block">
+        <div class="insights__label">Execution insights</div>
+        <p class="muted" style="font-size:var(--fs-sm)">
+          Pruning and byte accounting appear here once the run finishes.
+        </p>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endif %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Run #{{ run.id }} · Query Engine{% endblock %}
+
+{% block breadcrumbs %}
+  <a href="{% url 'dashboard' %}">Overview</a>
+  <span class="crumbs__sep">/</span>
+  <a href="{% url 'history' %}">Query History</a>
+  <span class="crumbs__sep">/</span>
+  <span class="crumbs__current">Run #{{ run.id }}</span>
+{% endblock %}
+
+{% block topbar_actions %}
+  <a class="btn btn--sm btn--ghost" href="{% url 'workspace_dataset' run.dataset.id %}">
+    Open in workspace
+  </a>
+  <form method="post" action="{% url 'rerun_query' run.id %}">
+    {% csrf_token %}
+    <button class="btn btn--sm btn--primary" type="submit">Rerun query</button>
+  </form>
+{% endblock %}
+
+{% block content %}
+{% include "components/page_header.html" with eyebrow="Query run" title=run_title subtitle=run_subtitle %}
+
+<div class="grid grid--split">
+  <div class="stack">
+    <div class="panel">
+      <div class="panel__head">
+        <h2>SQL</h2>
+        {% include "components/status_pill.html" with status=run.status %}
+      </div>
+      {% include "components/sql_block.html" with sql=run.sql %}
+      <p class="panel__foot">
+        Dataset <a href="{% url 'dataset_detail' run.dataset.id %}">{{ run.dataset.name }}</a>
+        &middot; <span class="mono">{{ run.dataset.uri }}</span>
+      </p>
+    </div>
+
+    <div class="panel panel--flush">
+      {% comment %}
+      The partial owns id="run-status" and self-polls while the run is
+      pending, so it is included bare -- no wrapper carrying the same id.
+      oob is left unset: the insights rail below is rendered inline here,
+      not swapped out of band.
+      {% endcomment %}
+      {% include "partials/_run_status.html" with run=run done=done columns=columns export_payload=export_payload export_dom_id=export_dom_id export_name=export_name %}
+    </div>
+  </div>
+
+  <div>
+    {% if done %}
+      {% include "components/execution_insights.html" with run=run %}
+    {% else %}
+      <div class="insights">
+        <div class="insights__block">
+          <div class="insights__label">Execution insights</div>
+          <p class="muted" style="font-size:var(--fs-sm)">
+            Pruning and byte accounting appear here once the run finishes.
+            Reload the page after the results panel settles.
+          </p>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/export.js' %}"></script>
+{% endblock %}

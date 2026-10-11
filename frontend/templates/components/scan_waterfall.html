@@ -1,0 +1,30 @@
+{% comment %}
+Byte waterfall: a naive full scan decomposed into what was skipped and why.
+
+ctx:
+  run (QueryRun, required)  uses run.scan_stages
+
+run.scan_stages guarantees the three savings bars plus the read bar sum to
+bytes_total exactly, so this is one number decomposed rather than four
+independently-measured ones. The copy below says so, because a reader will
+otherwise assume the bars are unrelated samples.
+{% endcomment %}
+{% if run.scan_stages %}
+<div class="fall">
+  {% for s in run.scan_stages %}
+  <div class="lbl {% if s.kind == 'read' %}row-read{% endif %}">{{ s.label }}</div>
+  <div class="track {{ s.kind }}">
+    <span style="width:{{ s.pct }}%"
+          role="img"
+          aria-label="{{ s.label }}: {{ s.pct }} percent of the full-scan total"></span>
+  </div>
+  <div class="amt {% if s.kind == 'read' %}row-read{% endif %}">{{ s.bytes|filesizeformat }}</div>
+  <div class="why">{{ s.why }}</div>
+  {% endfor %}
+</div>
+<p class="fall-note">
+  The middle bars are bytes a scan-everything engine would have read and this one did not.
+  They add up to the full scan exactly &mdash; it is one number decomposed, not four
+  separate measurements.
+</p>
+{% endif %}

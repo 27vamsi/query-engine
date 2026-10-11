@@ -1,0 +1,28 @@
+{% comment %}
+Mermaid plan diagram with the text plan as a collapsible fallback.
+
+ctx:
+  plan_mermaid (str, optional)  graph source from apps.engine.logical_plan.to_mermaid
+  plan_text    (str, optional)  format_plan output
+
+No inline <script>. plan.js renders every .mermaid node it finds, guarded by a
+data-rendered attribute, driven from one delegated htmx:afterSwap listener --
+so the diagram is not re-rendered on each 700ms poll of the run-status partial.
+
+The graph source is emitted as escaped template text and read back with
+textContent. to_mermaid only escapes `"` -> `'`, so labels still carry SQL
+fragments and dataset names that must not be parsed as markup.
+{% endcomment %}
+{% if plan_mermaid or plan_text %}
+<div class="plan">
+  {% if plan_mermaid %}<div class="mermaid">{{ plan_mermaid }}</div>{% endif %}
+  {% if plan_text %}
+  <details class="plan__fallback">
+    <summary>Text plan</summary>
+    <pre>{{ plan_text }}</pre>
+  </details>
+  {% endif %}
+</div>
+{% else %}
+{% include "components/empty_state.html" with inline=True title="No plan recorded" body="The plan is captured when a query is planned. Run this query to produce one." %}
+{% endif %}

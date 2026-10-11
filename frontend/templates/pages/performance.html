@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Performance · Query Engine{% endblock %}
+
+{% block breadcrumbs %}
+  <a href="{% url 'dashboard' %}">Overview</a>
+  <span class="crumbs__sep">/</span>
+  <span class="crumbs__current">Performance</span>
+{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+{% include "components/page_header.html" with title="Performance" subtitle="Latency and scan efficiency across recent runs, and a fixed benchmark suite over the sample dataset." %}
+
+<div class="metrics metrics--4">
+  {% include "components/metric_card.html" with label="Median latency" value=stats.median_ms unit="ms" sub=latency_sub %}
+  {% include "components/metric_card.html" with label="Fastest run" value=stats.fastest_ms unit="ms" sub="best recorded" tone="good" %}
+  {% include "components/metric_card.html" with label="Slowest run" value=stats.slowest_ms unit="ms" sub="worst recorded" tone="warn" %}
+  {% include "components/metric_card.html" with label="Bytes avoided" value=stats.saved_pct unit="%" sub=saved_sub tone="good" %}
+</div>
+
+{# --- Repeatable benchmark suite: our own latency + byte accounting. ----- #}
+<div class="panel panel--accent" data-chart-host>
+  <div class="panel__head">
+    <h2>Benchmark suite</h2>
+    <span class="tag">benchmark data, not live telemetry</span>
+  </div>
+  {% if benchmark %}
+  <p class="prose">
+    A fixed set of query shapes run against the sample dataset, chosen to exercise each
+    stage of the scan path: a full scan with nothing to prune, partition elimination,
+    row-group skipping on min/max statistics, and column projection. Each case records
+    wall-clock time alongside the compressed bytes the query actually paid for.
+  </p>
+  <p class="prose">
+    The byte columns are the point. For every query the engine reports which files it
+    never opened, which row-groups it skipped and why, and which columns it left on
+    disk &mdash; measured in compressed bytes, with a regression test asserting that a
+    full scan reports exactly 100%. Most query engines will not tell you that, and
+    neither will Athena.
+  </p>
+
+  <div class="chart chart--lg">
+    <canvas data-chart="benchmark" data-src="benchmark-data" role="img"
+            aria-label="Bar chart of wall-clock milliseconds for each benchmarked query shape."></canvas>
+  </div>
+
+  <div class="table-wrap" style="margin-top:var(--sp-5)">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Query</th>
+          <th scope="col">Shape</th>
+          <th scope="col" class="td-num">Wall clock</th>
+          <th scope="col" class="td-num">Bytes read</th>
+          <th scope="col" class="td-num">Of dataset</th>
+          <th scope="col" class="td-num">Columns</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in benchmark %}
+        <tr>
+          <td><strong>{{ b.label }}</strong></td>
+          <td class="muted td-mono">{{ b.shape }}</td>
+          <td class="td-num nums">{% if b.engine_ms %}{{ b.engine_ms }} ms{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+          <td class="td-num nums">{% if b.bytes_scanned %}{{ b.bytes_scanned|filesizeformat }}{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+          <td class="td-num">
+            {% if b.scan_ratio is not None %}
+              <span class="{% if b.scan_ratio < 25 %}t-good{% elif b.scan_ratio >= 90 %}t-warn{% endif %}">{{ b.scan_ratio }}%</span>
+            {% else %}<span class="muted">&mdash;</span>{% endif %}
+          </td>
+          <td class="td-num muted nums">
+            {% if b.columns_projected %}{{ b.columns_projected }} of {{ b.columns_total }}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="panel__foot">
+    Loaded from <code>benchmark_results.json</code> in the repository, regenerated against
+    the sample dataset on a single machine. Timings are reported as measured.
+  </p>
+  {% else %}
+    {% include "components/empty_state.html" with inline=True title="No benchmark file" body="benchmark_results.json is absent or unreadable, so there is nothing to show here. These figures are never fabricated from live timings — those run on different data under a different load." %}
+  {% endif %}
+</div>
+
+{% if runs %}
+<div class="grid grid--2">
+  <div class="panel">
+    <div class="panel__head">
+      <h2>Latency over time</h2>
+      <span class="muted">last {{ stats.window }} successful runs</span>
+    </div>
+    {% if duration_json %}
+    <div class="chart">
+      <canvas data-chart="duration" data-src="duration-data" role="img"
+              aria-label="Line chart of query duration in milliseconds across recent successful runs."></canvas>
+    </div>
+    <p class="panel__foot">
+      Wall-clock per run, planning included. The spikes are cold runs: row-group metadata
+      is cached after first read, so a repeated query against the same dataset skips
+      re-reading every footer.
+    </p>
+    {% else %}
+      {% include "components/empty_state.html" with inline=True title="No timings yet" %}
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <div class="panel__head">
+      <h2>Scan efficiency</h2>
+      <span class="muted">read vs avoided</span>
+    </div>
+    {% if scan_json %}
+    <div class="chart">
+      <canvas data-chart="scan" data-src="scan-data" role="img"
+              aria-label="Stacked bar chart of compressed bytes read against bytes avoided per run."></canvas>
+    </div>
+    <p class="panel__foot">
+      Column height is the compressed size of the whole dataset that run targeted. Both
+      sides of the ratio are compressed on-disk bytes &mdash; comparing compressed reads
+      against an uncompressed total would flatter every number here by about 1.5x.
+    </p>
+    {% else %}
+      {% include "components/empty_state.html" with inline=True title="No byte accounting yet" %}
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid grid--2">
+  <div class="panel panel--flush">
+    <div class="panel__head">
+      <h2>Slowest runs</h2>
+      <a class="btn btn--sm btn--ghost" href="{% url 'history' %}?sort=slowest">In history</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Run</th>
+            <th scope="col">SQL</th>
+            <th scope="col" class="td-num">Duration</th>
+            <th scope="col" class="td-num">Rows scanned</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in slowest %}
+          <tr>
+            <td><a href="{% url 'query_run' r.id %}">#{{ r.id }}</a></td>
+            <td class="td-sql" title="{{ r.sql }}">{{ r.sql|truncatechars:44 }}</td>
+            <td class="td-num"><span class="t-warn nums">{{ r.duration_ms }} ms</span></td>
+            <td class="td-num muted nums">{{ r.rows_scanned|default_if_none:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="panel__foot">
+      Latency tracks rows decoded, not bytes pruned &mdash; a query can avoid most of the
+      dataset and still be slow if what remains is wide.
+    </div>
+  </div>
+
+  <div class="panel panel--flush">
+    <div class="panel__head">
+      <h2>Least efficient scans</h2>
+      <a class="btn btn--sm btn--ghost" href="{% url 'history' %}?sort=greediest">In history</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Run</th>
+            <th scope="col">SQL</th>
+            <th scope="col" class="td-num">Read</th>
+            <th scope="col" class="td-num">Of dataset</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in greediest %}
+          <tr>
+            <td><a href="{% url 'query_run' r.id %}">#{{ r.id }}</a></td>
+            <td class="td-sql" title="{{ r.sql }}">{{ r.sql|truncatechars:44 }}</td>
+            <td class="td-num nums">{{ r.bytes_scanned|filesizeformat }}</td>
+            <td class="td-num"><span class="t-warn nums">{{ r.ratio|floatformat:1 }}%</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="panel__foot">
+      100% is not a bug. A query with no pushdownable filter must read everything, and
+      that case is pinned by a regression test precisely so the number stays honest.
+    </div>
+  </div>
+</div>
+
+<div class="panel panel--flush">
+  <div class="panel__head">
+    <h2>Most efficient scans</h2>
+    <a class="btn btn--sm btn--ghost" href="{% url 'history' %}?sort=leanest">In history</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Run</th>
+          <th scope="col">Dataset</th>
+          <th scope="col">SQL</th>
+          <th scope="col" class="td-num">Duration</th>
+          <th scope="col" class="td-num">Read</th>
+          <th scope="col" class="td-num">Of dataset</th>
+          <th scope="col" class="td-num">Pruned</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in leanest %}
+        <tr>
+          <td><a href="{% url 'query_run' r.id %}">#{{ r.id }}</a></td>
+          <td class="muted">{{ r.dataset.name }}</td>
+          <td class="td-sql" title="{{ r.sql }}">{{ r.sql|truncatechars:56 }}</td>
+          <td class="td-num nums">{{ r.duration_ms }} ms</td>
+          <td class="td-num nums">{{ r.bytes_scanned|filesizeformat }}</td>
+          <td class="td-num"><span class="t-good nums">{{ r.ratio|floatformat:1 }}%</span></td>
+          <td class="td-num muted nums">
+            {{ r.files_pruned|default:0 }}f / {{ r.row_groups_pruned|default:0 }}rg
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="panel__foot">
+    These are the runs where pushdown did the most work. <strong>Pruned</strong> is files
+    never opened and row-groups skipped on footer statistics.
+  </div>
+</div>
+{% else %}
+{% url 'workspace' as workspace_url %}
+{% include "components/empty_state.html" with title="No successful runs to measure" body="Latency and scan-efficiency figures are derived from completed runs. The benchmark suite above is loaded from a file and does not depend on them." action_url=workspace_url action_label="Open the SQL workspace" %}
+{% endif %}
+
+{{ duration_json|json_script:"duration-data" }}
+{{ benchmark_json|json_script:"benchmark-data" }}
+{{ scan_json|json_script:"scan-data" }}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/charts.js' %}"></script>
+{% endblock %}

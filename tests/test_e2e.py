@@ -32,6 +32,7 @@ def test_parallel_matches_serial(trips_dataset):
     parallel = run_sql(sql, trips_dataset, max_workers=4)
 
     def key(rows):
-        return sorted((r["payment"], round(r["s"], 2), r["n"]) for r in rows)
+        # payment is nullable, so the rows are not naturally orderable
+        return sorted(((r["payment"], round(r["s"], 2), r["n"]) for r in rows), key=repr)
 
     assert key(serial.rows) == key(parallel.rows)

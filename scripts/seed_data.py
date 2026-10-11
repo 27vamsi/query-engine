@@ -31,8 +31,18 @@ def gen_partition(path: str, n: int, base_passenger: int, seed: int) -> None:
     distance = [round(rng.uniform(0.3, 40.0), 2) for _ in range(n)]
     # price correlated with distance, so min/max stats are meaningful
     price = [round(d * rng.uniform(2.0, 4.5) + rng.uniform(2, 6), 2) for d in distance]
-    tip = [round(p * rng.uniform(0.0, 0.3), 2) for p in price]
     payment = [rng.choice(PAYMENT) for _ in range(n)]
+
+    # Real data has holes, and NULL handling is where engines quietly disagree
+    # (SUM and AVG over no non-null values are NULL, not 0). `tip` is always
+    # NULL for wallet payments, so `GROUP BY payment` has an all-NULL group.
+    # trip_id/distance/price stay non-null: the pruning demos rely on their
+    # min/max statistics being tight.
+    tip = [
+        None if p == "wallet" or rng.random() < 0.08 else round(pr * rng.uniform(0.0, 0.3), 2)
+        for p, pr in zip(payment, price)
+    ]
+    payment = [None if rng.random() < 0.03 else p for p in payment]
 
     table = pa.table(
         {

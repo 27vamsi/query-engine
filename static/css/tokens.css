@@ -1,0 +1,150 @@
+/* Design tokens. The ONLY place raw colors, sizes and timings are declared.
+   Everything else in the stylesheet set references these. */
+
+:root {
+  /* --- Surfaces, darkest to lightest ------------------------------------ */
+  --c-canvas:      #07090d;   /* page background, behind everything */
+  --c-surface:     #0d1117;   /* sidebar, topbar, code wells */
+  --c-panel:       #12161f;   /* cards and panels */
+  --c-panel-2:     #181d28;   /* nested panel / table header */
+  --c-raised:      #202634;   /* buttons, inputs, hover fills */
+  --c-raised-hi:   #2a3140;   /* button hover */
+
+  /* --- Lines ------------------------------------------------------------ */
+  --c-border:      #242b38;
+  --c-border-hi:   #323b4d;
+  --c-border-soft: #1a2029;
+
+  /* --- Text ------------------------------------------------------------- */
+  /* Every tier clears WCAG AA (4.5:1) for small text against every surface
+     above, --c-raised included -- that is the lightest surface any of these
+     are painted on, so it is the worst case. Measured ratios on --c-raised:
+     12.87 / 6.75 / 5.40 / 4.52. tests/test_a11y.py locks this; lowering any
+     of these values will fail the suite rather than quietly hurt legibility.
+     --c-text-faint carries the pruning explanations ('.fall .why'), which are
+     the whole point of the product, so it is held to the same bar as body text
+     and is NOT a decorative-only grey. */
+  --c-text:        #e8edf5;
+  --c-text-dim:    #a3aec0;
+  --c-text-mute:   #929bab;
+  --c-text-faint:  #848d9d;
+
+  /* --- Accents ---------------------------------------------------------- */
+  --c-accent:      #5b8cff;
+  --c-accent-hi:   #7aa2ff;
+  --c-accent-dim:  #2d4a8f;
+  --c-accent-wash: rgba(91, 140, 255, 0.12);
+  --c-accent-edge: rgba(91, 140, 255, 0.35);
+
+  --c-violet:      #a78bfa;
+  --c-violet-wash: rgba(167, 139, 250, 0.12);
+
+  /* --- Semantic --------------------------------------------------------- */
+  --c-good:        #3fd17f;
+  --c-good-wash:   rgba(63, 209, 127, 0.13);
+  --c-good-edge:   rgba(63, 209, 127, 0.32);
+
+  --c-warn:        #f2b544;
+  --c-warn-wash:   rgba(242, 181, 68, 0.13);
+  --c-warn-edge:   rgba(242, 181, 68, 0.32);
+
+  --c-bad:         #ff6b63;
+  --c-bad-wash:    rgba(255, 107, 99, 0.13);
+  --c-bad-edge:    rgba(255, 107, 99, 0.34);
+
+  --c-info:        #4cc8e8;
+  --c-info-wash:   rgba(76, 200, 232, 0.13);
+
+  /* --- Data-visualization palette -------------------------------------- */
+  /* Read = green (bytes we paid for), saved = red-ish (bytes avoided),
+     neutral = the naive-full-scan reference bar. */
+  --viz-read:      #3fd17f;
+  --viz-saved:     rgba(255, 107, 99, 0.5);
+  --viz-neutral:   #3a4354;
+  --viz-skip:      #262d3a;
+  --viz-grid:      rgba(255, 255, 255, 0.05);
+
+  /* --- Spacing scale (4px base) ----------------------------------------- */
+  --sp-0: 0;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 40px;
+  --sp-9: 56px;
+  --sp-10: 72px;
+
+  /* --- Radii ------------------------------------------------------------ */
+  --r-xs: 3px;
+  --r-sm: 5px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-pill: 999px;
+
+  /* --- Type ------------------------------------------------------------- */
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+             Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono",
+               Menlo, Consolas, monospace;
+
+  --fs-xs:  11px;
+  --fs-sm:  12px;
+  --fs-md:  13px;
+  --fs-base:14px;
+  --fs-lg:  16px;
+  --fs-xl:  19px;
+  --fs-2xl: 24px;
+  --fs-3xl: 30px;
+  --fs-4xl: 38px;
+
+  --lh-tight: 1.2;
+  --lh-snug:  1.4;
+  --lh-base:  1.6;
+  --lh-loose: 1.75;
+
+  --fw-normal:   400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+
+  --track-wide: 0.04em;
+  --track-caps: 0.07em;
+
+  /* --- Elevation -------------------------------------------------------- */
+  --sh-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --sh-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --sh-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --sh-glow: 0 0 0 1px var(--c-accent-edge), 0 4px 20px rgba(91, 140, 255, 0.18);
+
+  /* --- Motion ----------------------------------------------------------- */
+  --t-fast: 90ms;
+  --t-base: 160ms;
+  --t-slow: 280ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* --- Layout ----------------------------------------------------------- */
+  --w-sidebar: 240px;
+  --w-sidebar-collapsed: 64px;
+  --h-topbar: 54px;
+  --w-content-max: 1480px;
+  --z-sticky: 20;
+  --z-sidebar: 40;
+  --z-overlay: 60;
+  /* Below toasts on purpose: a failed request must stay readable while the
+     guided tour is open. */
+  --z-tour: 70;
+  --z-toast: 80;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-fast: 0ms;
+    --t-base: 0ms;
+    --t-slow: 0ms;
+  }
+}

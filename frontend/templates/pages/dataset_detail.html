@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+{% load dict_extras %}
+
+{% block title %}{{ dataset.name }} · Query Engine{% endblock %}
+
+{% block breadcrumbs %}
+  <a href="{% url 'dashboard' %}">Overview</a>
+  <span class="crumbs__sep">/</span>
+  <a href="{% url 'datasets' %}">Datasets</a>
+  <span class="crumbs__sep">/</span>
+  <span class="crumbs__current">{{ dataset.name }}</span>
+{% endblock %}
+
+{% block topbar_actions %}
+  <a class="btn btn--sm btn--primary" href="{% url 'workspace_dataset' dataset.id %}">
+    Query this dataset
+  </a>
+{% endblock %}
+
+{% block content %}
+{% include "components/page_header.html" with eyebrow="Dataset" title=dataset.name subtitle=dataset.description %}
+
+<div class="metrics metrics--4">
+  {% include "components/metric_card.html" with label="Files" value=dataset.file_count sub=files_sub %}
+  {% include "components/metric_card.html" with label="Compressed size" value=size_value sub="on-disk, as registered" %}
+  {% include "components/metric_card.html" with label="Columns" value=column_count sub=columns_sub %}
+  {% include "components/metric_card.html" with label="Queries run" value=run_count sub=runs_sub %}
+</div>
+
+<div class="tabs" role="tablist" aria-label="Dataset detail" data-tabs>
+  <button class="tab" type="button" role="tab" id="t-ds-schema"
+          aria-controls="p-ds-schema" aria-selected="true">Schema</button>
+  <button class="tab" type="button" role="tab" id="t-ds-storage"
+          aria-controls="p-ds-storage" aria-selected="false">Storage layout</button>
+  <button class="tab" type="button" role="tab" id="t-ds-parts"
+          aria-controls="p-ds-parts" aria-selected="false">
+    Partitions <span class="tab__count">{{ partition_total }}</span>
+  </button>
+  <button class="tab" type="button" role="tab" id="t-ds-demos"
+          aria-controls="p-ds-demos" aria-selected="false">Example queries</button>
+  <button class="tab" type="button" role="tab" id="t-ds-runs"
+          aria-controls="p-ds-runs" aria-selected="false">Recent runs</button>
+</div>
+
+{# --- Schema ------------------------------------------------------------- #}
+<div class="tabpanel" role="tabpanel" id="p-ds-schema" aria-labelledby="t-ds-schema" tabindex="0">
+  <div class="panel panel--flush">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Column</th>
+            <th scope="col">Arrow type</th>
+            <th scope="col">Kind</th>
+            <th scope="col">Footer min</th>
+            <th scope="col">Footer max</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in columns %}
+          <tr>
+            <td class="td-mono"><strong>{{ c.name }}</strong></td>
+            <td class="muted td-mono">{{ c.arrow_type }}</td>
+            <td>
+              {% if c.is_partition %}<span class="tag tag--partition">partition</span>
+              {% else %}<span class="muted">data</span>{% endif %}
+            </td>
+            <td class="muted td-mono">{{ stats|get_item:c.name|get_item:"min"|default_if_none:"—" }}</td>
+            <td class="muted td-mono">{{ stats|get_item:c.name|get_item:"max"|default_if_none:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="panel__foot">
+      Min/max are read from the <strong>first row-group of one file</strong> and are shown
+      for the first few columns only &mdash; they illustrate the statistics the engine
+      prunes on, not the range across the whole dataset. A blank cell means that column
+      carries no statistics in the footer.
+    </div>
+  </div>
+
+  <div class="panel panel--accent">
+    <div class="panel__head"><h2>Why partition columns are different</h2></div>
+    <p class="prose">
+      Partition columns are not stored inside the Parquet files at all &mdash; their values
+      come from the directory names, which is why a predicate on one can eliminate whole
+      files without opening any of them. Predicates on data columns have to fall back to
+      footer statistics, which skip row-groups instead.
+    </p>
+  </div>
+</div>
+
+{# --- Storage layout ----------------------------------------------------- #}
+<div class="tabpanel" role="tabpanel" id="p-ds-storage" aria-labelledby="t-ds-storage" tabindex="0" hidden>
+  {% if profile.columns %}
+  <div class="panel">
+    <div class="panel__head">
+      <h2>Per-column size on disk</h2>
+      <span class="muted">one file, footer-only</span>
+    </div>
+    <p class="prose">
+      Compressed bytes per column across one representative file. This is the table that
+      explains column projection: reading <code>{{ profile.narrowest.name }}</code> instead
+      of <code>{{ profile.widest.name }}</code> is the difference between
+      {{ profile.narrowest.bytes|filesizeformat }} and
+      {{ profile.widest.bytes|filesizeformat }}.
+    </p>
+    <div class="col-sizes">
+      {% for c in profile.columns %}
+      <div class="col-size">
+        <span class="col-size__name td-mono">{{ c.name }}</span>
+        <span class="col-size__track">
+          <span class="col-size__bar" style="width:{{ c.pct }}%"
+                aria-hidden="true"></span>
+        </span>
+        <span class="col-size__val nums">{{ c.bytes|filesizeformat }}</span>
+        <span class="col-size__pct muted nums">{{ c.pct }}%</span>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="panel__foot">
+      A <code>COUNT(*)</code> needs row counts, not values, so the engine resolves it to
+      the narrowest column on disk rather than the first declared one. On this file that is
+      <code>{{ profile.narrowest.name }}</code> at
+      {{ profile.narrowest.bytes|filesizeformat }} &mdash; against
+      {{ profile.file_bytes|filesizeformat }} for every column.
+    </p>
+  </div>
+
+  <div class="panel">
+    <div class="panel__head"><h2>Physical layout</h2></div>
+    <dl class="kv">
+      <dt>Sampled file</dt><dd class="td-mono">{{ profile.path }}</dd>
+      <dt>Row-groups in that file</dt><dd>{{ profile.row_groups }}</dd>
+      <dt>Rows in that file</dt><dd>{{ profile.rows }}</dd>
+      <dt>Rows per row-group</dt><dd>~{{ profile.rows_per_group }}</dd>
+      <dt>Column bytes in that file</dt><dd>{{ profile.file_bytes|filesizeformat }}</dd>
+      <dt>Files in the dataset</dt><dd>{{ dataset.file_count }}</dd>
+      <dt>Dataset size</dt><dd>{{ dataset.total_bytes|filesizeformat }}</dd>
+    </dl>
+    <p class="panel__foot">
+      The row-group count is what sets the granularity of statistics-based skipping: more
+      row-groups means finer pruning but a larger footer to read.
+    </p>
+  </div>
+  {% elif profile_error %}
+  <div class="panel">
+    <div class="errbox">
+      <div class="errbox__title">Storage could not be read</div>
+      <pre>{{ profile_error }}</pre>
+    </div>
+    <p class="panel__foot">
+      This panel reads a Parquet footer live, so it fails when the files have moved or the
+      credentials for the bucket are not available. The catalog metadata above still came
+      from registration time and is unaffected.
+    </p>
+  </div>
+  {% else %}
+    {% include "components/empty_state.html" with inline=True title="No files registered" body="The storage layout is read from a registered file's footer." %}
+  {% endif %}
+</div>
+
+{# --- Partitions --------------------------------------------------------- #}
+<div class="tabpanel" role="tabpanel" id="p-ds-parts" aria-labelledby="t-ds-parts" tabindex="0" hidden>
+  {% if partitions %}
+  <div class="panel panel--flush">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Partition values</th>
+            <th scope="col">Path</th>
+            <th scope="col" class="td-num">Size</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in partitions %}
+          <tr>
+            <td>
+              {% for k, v in p.values.items %}<span class="tag tag--partition">{{ k }}={{ v }}</span> {% empty %}
+              <span class="muted">unpartitioned</span>{% endfor %}
+            </td>
+            <td class="td-mono muted td-sql" title="{{ p.path }}">{{ p.path|truncatechars:64 }}</td>
+            <td class="td-num">{{ p.size_bytes|filesizeformat }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="panel__foot">
+      Showing {{ partitions|length }} of {{ partition_total }} registered file{{ partition_total|pluralize }}.
+      One row per file: these are the units a partition predicate eliminates whole.
+    </div>
+  </div>
+  {% else %}
+    {% include "components/empty_state.html" with inline=True title="No partitions discovered" body="The files under this prefix have no Hive-style key=value directories, so partition pruning does not apply — row-group skipping and column projection still do." %}
+  {% endif %}
+</div>
+
+{# --- Example queries ---------------------------------------------------- #}
+<div class="tabpanel" role="tabpanel" id="p-ds-demos" aria-labelledby="t-ds-demos" tabindex="0" hidden>
+  {% if demos %}
+  <div class="panel">
+    <div class="panel__head">
+      <h2>One query per mechanism</h2>
+      <a class="btn btn--sm btn--ghost" href="{% url 'workspace_dataset' dataset.id %}">
+        Open in workspace
+      </a>
+    </div>
+    <p class="prose">
+      Each of these isolates a single thing the engine does, generated against this
+      dataset's real schema and footer statistics. Submitting one runs it for real.
+    </p>
+    <div class="callout callout--warn">
+      The read percentages here are <strong>not</strong> a descending sequence. Each query
+      exercises a different mechanism; they do not stack. Two row-count queries can differ
+      by 20x purely in which column had to be read.
+    </div>
+    <div class="demos">
+      {% for d in demos %}
+      <form class="demo" method="post" action="{% url 'submit_query' %}">
+        {% csrf_token %}
+        <input type="hidden" name="dataset" value="{{ dataset.id }}">
+        <input type="hidden" name="sql" value="{{ d.sql }}">
+        <h3 class="demo__title">
+          <span class="step__num">{{ forloop.counter }}</span>{{ d.title }}
+        </h3>
+        <p class="demo__teaches">{{ d.teaches }}</p>
+        <pre>{{ d.sql }}</pre>
+        <button class="btn btn--sm btn--primary" type="submit">Run this</button>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+    {% include "components/empty_state.html" with inline=True title="No example queries" body="Examples are generated from the dataset's columns and footer statistics; neither could be read here." %}
+  {% endif %}
+</div>
+
+{# --- Recent runs -------------------------------------------------------- #}
+<div class="tabpanel" role="tabpanel" id="p-ds-runs" aria-labelledby="t-ds-runs" tabindex="0" hidden>
+  {% if runs %}
+  <div class="panel panel--flush">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Run</th>
+            <th scope="col">SQL</th>
+            <th scope="col">Status</th>
+            <th scope="col" class="td-num">Duration</th>
+            <th scope="col" class="td-num">Read</th>
+            <th scope="col">When</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in runs %}
+          <tr>
+            <td><a href="{% url 'query_run' r.id %}">#{{ r.id }}</a></td>
+            <td class="td-sql" title="{{ r.sql }}">{{ r.sql|truncatechars:60 }}</td>
+            <td>{% include "components/status_pill.html" with status=r.status %}</td>
+            <td class="td-num">
+              {% if r.duration_ms is not None %}{{ r.duration_ms }} ms
+              {% else %}<span class="muted">&mdash;</span>{% endif %}
+            </td>
+            <td class="td-num">
+              {% if r.scan_ratio is not None %}
+                <span class="{% if r.scan_ratio < 25 %}t-good{% elif r.scan_ratio >= 90 %}t-warn{% endif %}">{{ r.scan_ratio }}%</span>
+              {% else %}<span class="muted">&mdash;</span>{% endif %}
+            </td>
+            <td class="muted nowrap">{{ r.created_at|date:"d M H:i" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+    {% url 'workspace_dataset' dataset.id as ws_url %}
+    {% include "components/empty_state.html" with inline=True title="Nothing has run against this dataset" action_url=ws_url action_label="Open the workspace" %}
+  {% endif %}
+</div>
+{% endblock %}

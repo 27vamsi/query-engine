@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}SQL Workspace · Query Engine{% endblock %}
+{% block page_class %}page page--flush{% endblock %}
+
+{% block breadcrumbs %}
+  <a href="{% url 'dashboard' %}">Overview</a>
+  <span class="crumbs__sep">/</span>
+  <span class="crumbs__current">SQL Workspace{% if dataset %} · {{ dataset.name }}{% endif %}</span>
+{% endblock %}
+
+{% block topbar_actions %}
+  {% if dataset %}
+  <button class="btn btn--sm btn--ghost" type="button" data-tour-start>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01" stroke-linecap="round"/></svg>
+    Tour
+  </button>
+  <a class="btn btn--sm btn--ghost topbar__opt" href="{% url 'dataset_detail' dataset.id %}">Dataset details</a>
+  {% endif %}
+  <a class="btn btn--sm btn--ghost topbar__opt" href="{% url 'history' %}">History</a>
+{% endblock %}
+
+{% block extra_head %}
+  {% comment %}
+  CodeMirror 5, not 6: CM6 is ESM-only and would need a bundler, and this
+  project is deliberately build-free.
+  {% endcomment %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.18/lib/codemirror.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.18/lib/codemirror.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.18/mode/sql/sql.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.18/addon/edit/matchbrackets.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.18/addon/selection/active-line.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="ws" data-editor-scope>
+
+  {# ------------------------------------------------ left: dataset explorer #}
+  <section class="ws__pane ws__pane--left" aria-label="Dataset explorer">
+    <div class="ws__head">
+      <h2>Explorer</h2>
+      <a class="btn btn--sm btn--ghost" href="{% url 'datasets' %}">All</a>
+    </div>
+    <div class="ws__scroll">
+      <div class="explorer">
+
+        <div class="explorer__section">
+          <div class="explorer__label"><span>Datasets</span><span>{{ datasets|length }}</span></div>
+          {% for d in datasets %}
+          <a class="ds-pick {% if dataset and d.id == dataset.id %}is-active{% endif %}"
+             href="{% url 'workspace_dataset' d.id %}">
+            <span class="ds-pick__name">{{ d.name }}</span>
+            <span class="ds-pick__meta">{{ d.file_count }} files · {{ d.total_bytes|filesizeformat }}</span>
+          </a>
+          {% empty %}
+          <p class="muted" style="font-size:var(--fs-sm);padding:0 var(--sp-2)">
+            No datasets registered yet.
+          </p>
+          {% endfor %}
+        </div>
+
+        {% if dataset %}
+        <div class="explorer__section"
+             data-tour-step="1"
+             data-tour-text="The dataset's schema, read from a Parquet footer at registration time. Click a column to insert it at the cursor. Columns marked 'part' are partition columns — they live in the directory path, not inside the files.">
+          <div class="explorer__label">
+            <span>Schema</span><span>{{ columns|length }}</span>
+          </div>
+          <ul class="cols">
+            {% for c in columns %}
+            <li class="col-item">
+              {% comment %}
+              Inserts the column name at the cursor. The name travels as a
+              data attribute read with getAttribute, never as a JS literal.
+              {% endcomment %}
+              <button class="col-btn" type="button" data-insert-token="{{ c.name }}"
+                      title="Insert {{ c.name }}">
+                <span class="col-btn__dot {% if c.is_partition %}col-btn__dot--partition{% endif %}"
+                      aria-hidden="true"></span>
+                <span class="col-btn__name">{{ c.name }}</span>
+                <span class="col-btn__type">{% if c.is_partition %}part{% else %}{{ c.arrow_type }}{% endif %}</span>
+              </button>
+            </li>
+            {% endfor %}
+          </ul>
+          <p class="muted" style="font-size:var(--fs-xs);padding:var(--sp-2) var(--sp-3) 0;line-height:1.5">
+            Partition columns live in the directory path, not inside the files &mdash; filtering
+            on one costs zero I/O.
+          </p>
+        </div>
+
+        {% if demos %}
+        <div class="explorer__section"
+             data-tour-step="2"
+             data-tour-text="Each example isolates one mechanism: a baseline full scan, partition pruning, row-group skipping, column projection. Click one to load it into the editor. The percentages do not descend down the list — they are different mechanisms, not cumulative steps.">
+          <div class="explorer__label"><span>Example queries</span></div>
+          {% for d in demos %}
+          <button class="example" type="button" data-set-sql="{{ d.sql }}" title="{{ d.teaches }}">
+            <span class="example__title">
+              <span class="example__step" aria-hidden="true">{{ forloop.counter }}</span>
+              {{ d.title }}
+            </span>
+            <span class="example__teaches">{{ d.teaches }}</span>
+          </button>
+          {% endfor %}
+          <p class="muted" style="font-size:var(--fs-xs);padding:var(--sp-1) var(--sp-3) 0;line-height:1.5">
+            Each one isolates a single mechanism, so the percentages do not
+            decrease monotonically down the list.
+          </p>
+        </div>
+        {% endif %}
+        {% endif %}
+
+      </div>
+    </div>
+  </section>
+
+  {# ------------------------------------------------- centre: editor + output #}
+  <section class="ws__pane ws__pane--center" aria-label="Query editor and results">
+
+    {% if dataset %}
+    <div class="editor" data-sql-editor
+         data-tour-step="3"
+         data-tour-text="Write SQL here and press Ctrl/Cmd+Enter to run it. Explain plans the query without reading a single byte of data — useful for seeing what the optimizer did before paying for the scan.">
+      <form method="post" action="{% url 'submit_query' %}"
+            hx-post="{% url 'submit_query' %}"
+            hx-target="#run-status"
+            hx-swap="outerHTML">
+        {% csrf_token %}
+        <input type="hidden" name="dataset" value="{{ dataset.id }}">
+
+        <div class="editor__bar">
+          <span class="editor__dataset">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.6" aria-hidden="true">
+              <ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/>
+            </svg>
+            FROM <strong>{{ dataset.name }}</strong>
+          </span>
+          <span class="spacer"></span>
+          <button class="btn btn--sm btn--ghost" type="button" data-editor-copy>Copy</button>
+          <button class="btn btn--sm btn--ghost" type="button" data-editor-clear>Clear</button>
+          <button class="btn btn--sm btn--ghost" type="button"
+                  hx-post="{% url 'explain_query' %}"
+                  hx-include="closest form"
+                  hx-target="#run-status"
+                  hx-swap="outerHTML">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="4" rx="1"/><rect x="3" y="17" width="6" height="4" rx="1"/><rect x="15" y="17" width="6" height="4" rx="1"/><path d="M12 7v5M6 17v-3h12v3"/></svg>
+            Explain
+          </button>
+          <button class="btn btn--sm btn--primary" type="submit">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l12 8-12 8z"/></svg>
+            Run
+            <span class="btn__kbd">⌘↵</span>
+          </button>
+        </div>
+
+        <div class="editor__body">
+          <textarea name="sql" spellcheck="false" aria-label="SQL query"
+                    placeholder="SELECT * FROM {{ dataset.name }} LIMIT 20">{{ sql }}</textarea>
+        </div>
+      </form>
+
+      <div class="editor__hint">
+        <span><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> to run</span>
+        <span>Explain plans without reading any bytes</span>
+        <span>Single-table SELECT · <a href="{% url 'capabilities' %}">full scope</a></span>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="results"
+         data-tour-step="4"
+         data-tour-text="Results land here, alongside the plan that actually executed, a byte-by-byte breakdown of what the scan avoided, and the raw metrics the engine recorded.">
+      {% if dataset %}
+      <div id="run-status">
+        <div class="results__status">
+          <span class="pill pill--neutral pill--plain">ready</span>
+          <span class="muted">Run a query, or pick one of the examples in the explorer.</span>
+        </div>
+        <div class="results__scroll">
+          {% include "components/empty_state.html" with title="Nothing has run yet" body="Results, the optimized plan, and a byte-by-byte breakdown of what the scan avoided reading will appear here." %}
+        </div>
+      </div>
+      {% else %}
+      <div class="results__scroll">
+        {% url 'datasets' as datasets_url %}
+        {% include "components/empty_state.html" with title="No dataset selected" body="Register a dataset, then pick it in the explorer to start querying. A dataset is a prefix of Parquet files — there is no load step." hint="python manage.py register_dataset trips ./data/trips" action_url=datasets_url action_label="Browse datasets" %}
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ------------------------------------------- right: execution insights rail #}
+  <aside class="ws__pane ws__pane--right" aria-label="Execution insights"
+         data-tour-step="5"
+         data-tour-text="The point of the whole project. After a run this rail shows which files were never opened, which row-groups were skipped and why, and how many compressed bytes that saved against the dataset's full size.">
+    <div class="ws__head">
+      <h2>Execution insights</h2>
+    </div>
+    <div class="ws__scroll">
+      {% comment %}
+      Replaced by an out-of-band swap from the run-status partial, so one
+      polling region updates both panes.
+      {% endcomment %}
+      <div id="insights-host">
+        <div class="insights">
+          <div class="insights__block">
+            <div class="insights__label">What shows up here</div>
+            <p class="muted" style="font-size:var(--fs-sm);line-height:1.65">
+              Every run reports the files it never opened, the row-groups it ruled out on
+              Parquet footer min/max statistics, and the columns it left on disk &mdash;
+              then shows the bytes that cost it, against the dataset's full compressed size.
+            </p>
+          </div>
+          {% if dataset %}
+          <div class="insights__block">
+            <div class="insights__label">Dataset</div>
+            <dl class="kv">
+              <dt>Name</dt><dd>{{ dataset.name }}</dd>
+              <dt>Location</dt><dd>{{ dataset.uri }}</dd>
+              <dt>Files</dt><dd>{{ dataset.file_count }}</dd>
+              <dt>Compressed</dt><dd>{{ dataset.total_bytes|filesizeformat }}</dd>
+              <dt>Partitioned by</dt>
+              <dd>{% if dataset.partition_columns %}{{ dataset.partition_columns|join:", " }}{% else %}not partitioned{% endif %}</dd>
+            </dl>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </aside>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% comment %}
+Loaded after shell.js but before DOMContentLoaded fires, so shell.js's
+initWithin() pass picks up these initializers on the first paint.
+{% endcomment %}
+<script src="{% static 'js/editor.js' %}"></script>
+<script src="{% static 'js/export.js' %}"></script>
+<script src="{% static 'js/tour.js' %}"></script>
+{% endblock %}

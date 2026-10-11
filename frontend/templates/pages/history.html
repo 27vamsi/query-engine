@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}Query History · Query Engine{% endblock %}
+
+{% block breadcrumbs %}
+  <a href="{% url 'dashboard' %}">Overview</a>
+  <span class="crumbs__sep">/</span>
+  <span class="crumbs__current">Query History</span>
+{% endblock %}
+
+{% block content %}
+{% include "components/page_header.html" with title="Query history" subtitle="Every run, with the bytes it read against the full compressed size of the dataset it targeted. Read share is the column worth sorting by." %}
+
+{% comment %}
+Filtering is a GET form so every result set is a shareable URL and the
+browser's back button works. All of it runs in SQL -- see history.py.
+{% endcomment %}
+<form class="filters" method="get" action="{% url 'history' %}">
+  <div class="field">
+    <label class="field__label" for="f-q">Search SQL</label>
+    <input class="input search" type="search" id="f-q" name="q"
+           value="{{ query.search }}" placeholder="GROUP BY, region, count(" autocomplete="off">
+  </div>
+  <div class="field">
+    <label class="field__label" for="f-dataset">Dataset</label>
+    <select id="f-dataset" name="dataset">
+      <option value="">All datasets</option>
+      {% for d in datasets %}
+      <option value="{{ d.id }}" {% if query.dataset_id == d.id %}selected{% endif %}>{{ d.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label class="field__label" for="f-status">Status</label>
+    <select id="f-status" name="status">
+      <option value="">Any status</option>
+      {% for s in status_options %}
+      <option value="{{ s.value }}" {% if query.status == s.value %}selected{% endif %}>{{ s.label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label class="field__label" for="f-sort">Sort by</label>
+    <select id="f-sort" name="sort">
+      {% for s in sort_options %}
+      <option value="{{ s.value }}" {% if query.sort == s.value %}selected{% endif %}>{{ s.label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field field--actions">
+    <button class="btn btn--primary" type="submit">Apply</button>
+    {% if query.is_filtered %}
+    <a class="btn btn--ghost" href="{% url 'history' %}">Reset</a>
+    {% endif %}
+  </div>
+</form>
+
+{% if runs %}
+<div class="panel panel--flush">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Run</th>
+          <th scope="col">Dataset</th>
+          <th scope="col">SQL</th>
+          <th scope="col">Status</th>
+          <th scope="col" class="td-num">Duration</th>
+          <th scope="col" class="td-num">Read</th>
+          <th scope="col" class="td-num">Of dataset</th>
+          <th scope="col" class="td-num">Pruned</th>
+          <th scope="col">When</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in runs %}
+        <tr>
+          <td><a href="{% url 'query_run' r.id %}">#{{ r.id }}</a></td>
+          <td><a href="{% url 'dataset_detail' r.dataset.id %}" class="muted">{{ r.dataset.name }}</a></td>
+          <td class="td-sql" title="{{ r.sql }}">{{ r.sql|truncatechars:64 }}</td>
+          <td>{% include "components/status_pill.html" with status=r.status %}</td>
+          <td class="td-num">
+            {% if r.duration_ms is not None %}{{ r.duration_ms }} ms
+            {% else %}<span class="muted">&mdash;</span>{% endif %}
+          </td>
+          <td class="td-num">
+            {% if r.bytes_scanned is not None %}{{ r.bytes_scanned|filesizeformat }}
+            {% else %}<span class="muted">&mdash;</span>{% endif %}
+          </td>
+          <td class="td-num">
+            {% if r.scan_ratio is not None %}
+              <span class="{% if r.scan_ratio < 25 %}t-good{% elif r.scan_ratio >= 90 %}t-warn{% endif %}">{{ r.scan_ratio }}%</span>
+            {% else %}<span class="muted">&mdash;</span>{% endif %}
+          </td>
+          <td class="td-num muted nums">
+            {% if r.files_pruned or r.row_groups_pruned %}
+              {{ r.files_pruned|default:0 }}f / {{ r.row_groups_pruned|default:0 }}rg
+            {% else %}<span class="muted">none</span>{% endif %}
+          </td>
+          <td class="muted nowrap">{{ r.created_at|date:"d M H:i" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="panel__foot">
+    {{ result_summary }}
+    <strong>Pruned</strong> counts files never opened and row-groups skipped on footer
+    statistics.
+    {% if ratio_sorted %}
+    Sorting by read share excludes runs with no byte accounting, since a missing
+    measurement is not a low one.
+    {% endif %}
+  </div>
+</div>
+{% elif query.is_filtered %}
+  {% url 'history' as history_url %}
+  {% include "components/empty_state.html" with title="No runs match those filters" body="Nothing in the history satisfies this combination. Clearing the filters shows every recorded run." action_url=history_url action_label="Reset filters" %}
+{% else %}
+  {% url 'workspace' as workspace_url %}
+  {% include "components/empty_state.html" with title="No queries have run yet" body="Run something in the workspace and it shows up here with its full byte accounting." action_url=workspace_url action_label="Open the SQL workspace" %}
+{% endif %}
+{% endblock %}

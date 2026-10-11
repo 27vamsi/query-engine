@@ -1,0 +1,24 @@
+{% comment %}
+Read-only SQL with a copy button.
+
+ctx:
+  sql     (str, required)
+  label   (str, optional)  panel caption, defaults to "SQL"
+  compact (bool, optional) smaller type, for table rows and cards
+
+The SQL is rendered as autoescaped template text inside <pre>. It reaches the
+copy handler through a data-copy attribute read with getAttribute, never
+interpolated into a JS literal -- user SQL is the most obvious XSS vector on
+these pages.
+{% endcomment %}
+<div class="sqlblock">
+  <div class="row row--between" style="margin-bottom:var(--sp-2)">
+    <span class="caps">{{ label|default:"SQL" }}</span>
+    <button class="btn btn--sm btn--ghost" type="button"
+            data-copy="{{ sql }}" data-copy-label="SQL copied">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg>
+      Copy
+    </button>
+  </div>
+  <pre{% if compact %} style="font-size:var(--fs-xs)"{% endif %}>{{ sql }}</pre>
+</div>

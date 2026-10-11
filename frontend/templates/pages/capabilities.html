@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}Engine Capabilities · Query Engine{% endblock %}
+
+{% block breadcrumbs %}
+  <a href="{% url 'dashboard' %}">Overview</a>
+  <span class="crumbs__sep">/</span>
+  <span class="crumbs__current">Capabilities</span>
+{% endblock %}
+
+{% block content %}
+{% include "components/page_header.html" with title="Engine capabilities" subtitle="What the engine supports, how correctness is established, and where the depth is. The SQL surface is narrow by design — the engineering is in the scan path." %}
+
+<div class="grid grid--2">
+  <div class="panel">
+    <h2>Supported SQL</h2>
+    <dl class="kv">
+      <dt>Shape</dt><dd>single-table SELECT</dd>
+      <dt>Clauses</dt><dd>WHERE · GROUP BY · ORDER BY · LIMIT</dd>
+      <dt>Aggregates</dt><dd>count · sum · avg · min · max</dd>
+      <dt>Predicates</dt><dd>= &lt; &lt;= &gt; &gt;= != · AND · OR · IN</dd>
+      <dt>Projection</dt><dd>explicit columns, <code>*</code>, aliases</dd>
+    </dl>
+    <p class="panel__foot">
+      SQL is parsed with sqlglot into a logical plan, so the accepted grammar is a
+      subset chosen by the planner, not by a hand-rolled parser.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>Deliberately out of scope</h2>
+    <ul class="notes">
+      <li><strong>Joins.</strong> No join operator exists in the logical plan. Adding one
+        means a join algorithm, build/probe side selection and spill handling — a second
+        project, not a feature.</li>
+      <li><strong>Subqueries and CTEs.</strong> The planner takes a single scan as its leaf.</li>
+      <li><strong>Window functions.</strong> Would need a sort-based partitioned operator
+        the executor has no shape for.</li>
+      <li><strong>DML and DDL.</strong> Read-only by design; a dataset is a prefix of
+        Parquet files registered in the catalog, and there is no load step to write back to.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>What the engine actually does well</h2>
+  <div class="grid grid--3">
+    <div class="metric">
+      <span class="metric__label">Partition pruning</span>
+      <span class="metric__sub" style="margin-top:0">
+        Hive-style partition values are parsed from the directory path. A predicate on a
+        partition column eliminates whole files <em>before any file is opened</em>, so
+        pruned files cost zero I/O — not a cheap read, no read at all.
+      </span>
+    </div>
+    <div class="metric">
+      <span class="metric__label">Row-group skipping</span>
+      <span class="metric__sub" style="margin-top:0">
+        Every Parquet footer carries min/max statistics per row-group. The engine reads
+        footers only, evaluates the predicate against those ranges, and skips any
+        row-group it can prove holds no match before decompressing a byte.
+      </span>
+    </div>
+    <div class="metric">
+      <span class="metric__label">Column projection</span>
+      <span class="metric__sub" style="margin-top:0">
+        Parquet is columnar, so unreferenced columns are never touched. A
+        <code>COUNT(*)</code> resolves to the narrowest column on disk rather than the
+        first declared one — on the sample dataset that is a 19x difference.
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid--2">
+  <div class="panel">
+    <h2>Execution</h2>
+    <ul class="notes">
+      <li>Scan tasks are fanned across a <code>ProcessPoolExecutor</code> above a 2M-row
+        threshold, with a serial fallback below it — process startup costs more than it
+        saves on small scans.</li>
+      <li>Aggregates are computed as partial aggregates per task and then merged, so
+        <code>AVG</code> is <code>sum(sums) / sum(counts)</code> rather than an average
+        of averages.</li>
+      <li>Row-group metadata is cached (Redis when <code>REDIS_URL</code> is set), so
+        repeated queries against a dataset do not re-read every footer.</li>
+    </ul>
+  </div>
+
+  <div class="panel">
+    <h2>SQL NULL semantics</h2>
+    <p class="prose">
+      Partial-aggregate-then-merge quietly breaks SQL NULL rules unless each aggregate is
+      guarded, because the merge step cannot otherwise tell "summed nothing" from
+      "summed to zero".
+    </p>
+    <ul class="notes">
+      <li><code>AVG</code> over zero non-null values returns NULL, not NaN.</li>
+      <li><code>SUM</code> over zero non-null values returns NULL, not 0.</li>
+      <li><code>MIN</code>, <code>MAX</code> and <code>COUNT</code> already matched SQL.</li>
+      <li>NULL group keys form their own group rather than being dropped.</li>
+    </ul>
+    <p class="panel__foot">
+      Pinned by regression tests, and by the result grid rendering a real
+      <span class="null">NULL</span> rather than Python's <code>None</code>.
+    </p>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Byte accounting</h2>
+  <p class="prose">
+    Both sides of every ratio on this site are <strong>compressed on-disk bytes</strong>.
+    <code>bytes_scanned</code> is the sum of <code>total_compressed_size</code> for the
+    projected columns in the row-groups that were kept. <code>bytes_total</code> is the
+    compressed size of every row-group including the pruned ones, plus the file size of
+    files that were never opened.
+  </p>
+  <p class="prose">
+    That denominator is the point. An earlier version compared compressed bytes read
+    against <em>uncompressed</em> total size and excluded pruned row-groups entirely,
+    which made every query look about 1.5x better than it was. The sanity check is simple:
+    a query with nothing to prune must report exactly 100%, and there is a regression
+    test that fails if it ever does not.
+  </p>
+</div>
+
+<div class="grid grid--2">
+  <div class="panel">
+    <h2>How correctness is established</h2>
+    <ul class="notes">
+      <li><strong>DuckDB is the oracle.</strong> The test suite runs each query through
+        both engines over the same Parquet files and compares result sets. Agreeing with
+        a mature engine is a much stronger claim than agreeing with hand-written expected
+        values.</li>
+      <li><strong>NaN is not NULL.</strong> The comparison helper normalises NaN to a
+        distinct marker before sorting, so a NaN-where-NULL-was-expected divergence fails
+        loudly instead of comparing equal.</li>
+      <li><strong>The fixture contains NULLs on purpose</strong> &mdash; including a group
+        whose aggregate column is entirely NULL, and a column that is NULL in every row.
+        Without those rows the NULL-semantics fixes above would pass trivially.</li>
+      <li><strong>The 100% full-scan assertion</strong> is its own test: a query with
+        nothing to prune must report reading exactly 100% of the dataset. It is what keeps
+        the byte accounting anchored to a real denominator.</li>
+    </ul>
+  </div>
+
+  <div class="panel">
+    <h2>On the roadmap</h2>
+    <ul class="notes">
+      <li><strong>Metadata-only <code>COUNT(*)</code>.</strong> An unfiltered count can be
+        answered from Parquet footer row counts alone, at zero data I/O. Today it reads the
+        narrowest column instead &mdash; cheap, but not free.</li>
+      <li><strong>Streaming result delivery.</strong> Results are currently materialised
+        before being sliced to a preview; chunked delivery would let the executor hand back
+        batches as row-groups complete.</li>
+      <li><strong>Bloom filter support.</strong> Parquet footers can carry bloom filters for
+        high-cardinality columns, which would prune row-groups that min/max statistics
+        cannot &mdash; equality predicates on IDs are the obvious win.</li>
+      <li><strong>Predicate pushdown into page indexes.</strong> Row-group skipping is
+        coarse; Parquet page-level statistics would push the same logic one level deeper.</li>
+    </ul>
+  </div>
+</div>
+{% endblock %}

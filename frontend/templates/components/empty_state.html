@@ -1,0 +1,24 @@
+{% comment %}
+Shown wherever there is genuinely no data, instead of an empty table.
+
+ctx:
+  title        (str, required)
+  body         (str, optional)  what the visitor should do about it
+  action_url   (str, optional)  href for the primary action
+  action_label (str, optional)  label for the primary action
+  hint         (str, optional)  a code snippet rendered in a <pre>
+  inline       (bool, optional) drop the dashed border, for use inside a panel
+{% endcomment %}
+<div class="empty {% if inline %}empty--inline{% endif %}">
+  <div class="empty__icon" aria-hidden="true">
+    <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 7h16v12H4z"/><path d="M4 11h16M9 11v8"/>
+    </svg>
+  </div>
+  <div class="empty__title">{{ title }}</div>
+  {% if body %}<p class="empty__body">{{ body }}</p>{% endif %}
+  {% if action_url and action_label %}
+  <a class="btn btn--primary btn--sm" href="{{ action_url }}">{{ action_label }}</a>
+  {% endif %}
+  {% if hint %}<pre style="margin-top:var(--sp-4);text-align:left">{{ hint }}</pre>{% endif %}
+</div>

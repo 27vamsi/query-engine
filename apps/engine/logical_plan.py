@@ -38,7 +38,14 @@ class Scan(LogicalNode):
     children: list[LogicalNode] = field(default_factory=list)
 
     def describe(self) -> str:
-        cols = ",".join(self.projection) if self.projection else "*"
+        if self.projection is None:
+            cols = "*"
+        elif not self.projection:
+            # No column referenced; physical planning picks the narrowest one
+            # purely to count rows.
+            cols = "row counts only"
+        else:
+            cols = ",".join(self.projection)
         parts = [f"Scan {self.dataset} cols=[{cols}]"]
         if self.partition_filter:
             parts.append("part_filter")

@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Query Plans · Query Engine{% endblock %}
+
+{% block breadcrumbs %}
+  <a href="{% url 'dashboard' %}">Overview</a>
+  <span class="crumbs__sep">/</span>
+  <span class="crumbs__current">Query Plans</span>
+{% endblock %}
+
+{% block topbar_actions %}
+  <a class="btn btn--sm btn--primary" href="{% url 'workspace' %}">Explain some SQL</a>
+{% endblock %}
+
+{% block content %}
+{% include "components/page_header.html" with title="Query plans" subtitle="Every plan here is post-optimization — what actually executed, not what was parsed." %}
+
+{# --- How to read a plan. Without this the diagrams are just boxes. --- #}
+<div class="grid grid--2">
+  <div class="panel">
+    <div class="panel__head"><h2>How to read these</h2></div>
+    <p class="prose">
+      Plans render leaf-last: the <code>Scan</code> at the bottom is where bytes come off
+      disk, and each node above it consumes its child's output. The optimizer has already
+      run, so what the <code>Scan</code> node reports is what it genuinely read.
+    </p>
+    <dl class="kv">
+      <dt><code>cols=[…]</code></dt>
+      <dd>the columns actually read off disk, after projection pushdown</dd>
+      <dt><code>cols=[row counts only]</code></dt>
+      <dd>no column values were needed, so the narrowest column on disk was read for its
+        row count alone</dd>
+      <dt><code>parts=[…]</code></dt>
+      <dd>predicates resolved from directory names, eliminating whole files</dd>
+      <dt><code>filter=[…]</code></dt>
+      <dd>predicates tested against footer min/max to skip row-groups, then applied to the
+        rows that survive</dd>
+      <dt><code>group=[-]</code></dt>
+      <dd>an aggregate over the whole input, with no <code>GROUP BY</code></dd>
+    </dl>
+  </div>
+
+  <div class="panel">
+    <div class="panel__head"><h2>What the optimizer does</h2></div>
+    <ul class="notes">
+      <li><strong>Projection pushdown.</strong> Walks the tree collecting every referenced
+        column and pushes that set into the <code>Scan</code>. Unreferenced columns are
+        never read, which on a columnar format is the single biggest win available.</li>
+      <li><strong>Predicate pushdown.</strong> Splits the <code>WHERE</code> clause on
+        <code>AND</code> and routes each conjunct by what it touches: partition columns
+        become file-elimination rules, data columns become row-group statistics tests.
+        The split matters because only one of those costs zero I/O.</li>
+      <li><strong>Filter removal.</strong> A <code>Filter</code> node whose predicates were
+        entirely absorbed by the scan is deleted rather than left in place re-checking
+        rows that cannot fail.</li>
+    </ul>
+    <p class="panel__foot">
+      Three rules, applied to a fixed point. There is no cost model and no join ordering
+      &mdash; with a single-table scan as the only leaf there is nothing to order.
+    </p>
+  </div>
+</div>
+
+{% if runs %}
+<div class="stack stack--lg">
+  {% for r in runs %}
+  <div class="panel">
+    <div class="panel__head">
+      <div>
+        <h2 style="margin:0">
+          <a href="{% url 'query_run' r.id %}">Run #{{ r.id }}</a>
+          <span class="muted">&middot; {{ r.dataset.name }}</span>
+        </h2>
+      </div>
+      <div class="row">
+        {% include "components/status_pill.html" with status=r.status %}
+        {% if r.scan_ratio is not None %}
+        <span class="tag">read {{ r.scan_ratio }}% of dataset bytes</span>
+        {% endif %}
+        {% if r.duration_ms is not None %}
+        <span class="tag">{{ r.duration_ms }} ms</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="grid grid--split">
+      <div>{% include "components/plan_diagram.html" with plan_mermaid=r.plan_mermaid plan_text=r.plan_text %}</div>
+      <div class="stack stack--sm">
+        {% include "components/sql_block.html" with sql=r.sql compact=True %}
+        {% if r.pruning_notes %}
+        <ul class="notes notes--sm">
+          {% for note in r.pruning_notes %}<li>{{ note }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+<p class="muted" style="font-size:var(--fs-sm)">
+  Showing the {{ runs|length }} most recent run{{ runs|length|pluralize }} that recorded a plan.
+</p>
+{% else %}
+{% url 'workspace' as workspace_url %}
+{% include "components/empty_state.html" with title="No plans recorded yet" body="A plan is captured whenever a query is planned, whether or not it is executed. The Explain button in the workspace plans without reading any bytes." action_url=workspace_url action_label="Open the SQL workspace" %}
+{% endif %}
+{% endblock %}

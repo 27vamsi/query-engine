@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Datasets · Query Engine{% endblock %}
+
+{% block breadcrumbs %}
+  <a href="{% url 'dashboard' %}">Overview</a>
+  <span class="crumbs__sep">/</span>
+  <span class="crumbs__current">Datasets</span>
+{% endblock %}
+
+{% block content %}
+{% include "components/page_header.html" with title="Datasets" subtitle="A dataset is a registered prefix of Parquet files, local or in object storage. Registering one reads footers only — there is no load step and no copy of the data." %}
+
+{% if usage %}
+<div class="panel panel--flush">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Location</th>
+          <th scope="col" class="td-num">Files</th>
+          <th scope="col" class="td-num">Compressed</th>
+          <th scope="col">Partitioned by</th>
+          <th scope="col" class="td-num">Columns</th>
+          <th scope="col" class="td-num">Runs</th>
+          <th scope="col" class="td-num">Median</th>
+          <th scope="col" class="td-num">Read</th>
+          <th scope="col"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in usage %}
+        <tr>
+          <td><a href="{% url 'dataset_detail' u.dataset.id %}"><strong>{{ u.dataset.name }}</strong></a></td>
+          <td class="td-mono muted">{{ u.dataset.uri }}</td>
+          <td class="td-num">{{ u.dataset.file_count }}</td>
+          <td class="td-num">{{ u.dataset.total_bytes|filesizeformat }}</td>
+          <td>
+            {% for p in u.dataset.partition_columns %}<span class="tag tag--partition">{{ p }}</span> {% empty %}
+            <span class="muted">&mdash;</span>{% endfor %}
+          </td>
+          <td class="td-num">{{ u.dataset.column_names|length }}</td>
+          <td class="td-num">{{ u.run_count }}</td>
+          <td class="td-num">
+            {% if u.median_ms is not None %}{{ u.median_ms }} ms
+            {% else %}<span class="muted">&mdash;</span>{% endif %}
+          </td>
+          <td class="td-num">
+            {% if u.scan_ratio is not None %}
+              <span class="{% if u.scan_ratio < 25 %}t-good{% elif u.scan_ratio >= 90 %}t-warn{% endif %}">{{ u.scan_ratio }}%</span>
+            {% else %}<span class="muted">&mdash;</span>{% endif %}
+          </td>
+          <td class="td-num">
+            <a class="btn btn--sm btn--primary" href="{% url 'workspace_dataset' u.dataset.id %}">Query</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="panel__foot">
+    Median latency and read share are over all successful runs against each dataset.
+    <strong>Read</strong> is compressed bytes scanned as a share of the compressed bytes
+    those queries could have scanned.
+  </div>
+</div>
+
+<div class="panel panel--accent">
+  <div class="panel__head"><h2>Registering another prefix</h2></div>
+  <p class="prose">
+    The engine resolves any URI its filesystem layer understands &mdash; a local path or
+    an S3-compatible bucket. It opens one Parquet footer to infer the schema, parses
+    Hive-style <code>key=value</code> directory names into partition columns, and records
+    the file inventory. The data itself is never read or moved.
+  </p>
+  <pre>python manage.py register_dataset trips ./data/trips
+python manage.py register_dataset events s3://my-bucket/events</pre>
+</div>
+{% else %}
+{% include "components/empty_state.html" with title="No datasets registered" body="Point the engine at a prefix of Parquet files. It reads one footer to infer the schema and parses Hive partition keys from the paths." hint="python manage.py register_dataset trips ./data/trips" %}
+{% endif %}
+{% endblock %}

@@ -6,10 +6,11 @@ and it parses the query, builds a plan, throws away the partitions and columns i
 doesn't need, pushes the `WHERE` clause down to the Parquet reader, fans the scan
 out across a process pool, and merges the partial results.
 
-It's basically a teaching-grade DuckDB/Presto. The interesting part isn't that it
-returns the right answer (DuckDB does that faster). It's that you can see *why*
-it's fast: how many files got skipped, how many row-groups got pruned, and how
-few bytes actually came off disk.
+The interesting part isn't just that it returns the right answer — it's that you
+can see exactly *why* a query was cheap: how many files got skipped, how many
+row-groups got pruned, which columns never left disk, and how few compressed
+bytes actually came off storage. Athena will tell you it scanned 4.2 MB; it
+won't tell you which files it skipped, or why. This does.
 
 Django sits on top as the control plane: register datasets, submit queries, watch
 them run, look at the plan as a diagram, and keep a history with timing and
@@ -55,8 +56,28 @@ python -m venv .venv
 .venv/bin/python manage.py runserver
 ```
 
-Open http://localhost:8000. There's a `trips` dataset waiting; click into it, edit
-the sample SQL, hit Execute, and you'll get the plan diagram plus the metrics.
+Open http://localhost:8000. There's a `trips` dataset waiting; click into it and
+you'll get a guided demo — five one-click queries, each isolating one thing the
+engine does. Run the full-scan baseline first, then work down the list:
+
+```
+1. Full scan (baseline)   5.90 MB / 5.90 MB   100.0%   nothing pruned
+2. Partition pruning        28 KB / 5.97 MB     0.5%   10 of 15 files never opened
+3. Row-group skipping      542 KB / 5.90 MB     9.0%   80 of 120 row-groups skipped
+4. Column projection      1.37 MB / 5.90 MB    23.2%   1 of 7 columns read
+5. All three at once       0.99 MB / 5.97 MB    16.5%   partition + stats + projection
+```
+
+Those don't descend in a neat line, and that's the point — each row isolates a
+different mechanism rather than stacking on the one before. Steps 2 and 3 are
+both row counts, so the gap between them is which column had to be read to
+count: step 3 filters on `trip_id` and so pays for a wide int64, while step 2
+can count using the narrowest column in the file. Steps 4 and 5 read a real
+measure column instead of just counting, which costs more than any amount of
+pruning saves.
+
+Each result page explains in English what got skipped and why, alongside the plan
+diagram and the raw metrics. There's a SQL box underneath for your own queries.
 
 `/admin` gives you the ops view of every query run. `/api/catalog/datasets/` and
 `/api/queries/runs/` are the REST endpoints if you'd rather drive it that way.
@@ -86,13 +107,15 @@ Every run records:
 - `duration_ms`, `rows_returned`, `rows_scanned`
 - `files_pruned` (partition pruning)
 - `row_groups_pruned` (predicate pushdown against min/max stats)
+- `columns_projected` vs `columns_total` (projection pushdown)
 - `bytes_scanned` vs `bytes_total` (column pruning + row-group pruning)
 - the optimized plan as text and as a Mermaid diagram
 
-`bytes_scanned / bytes_total` is the number to watch. On the sample data a
-selective filter like `trip_id > 299990` reads a single row-group out of 120, and
-a `region = 'EU'` query throws away two thirds of the files before opening
-anything.
+`bytes_scanned / bytes_total` is the number to watch, and both sides are
+compressed on-disk bytes so a full scan reads exactly 100%. On the sample data a
+selective filter like `trip_id > 299990` reads a single row-group out of 120
+(0.2% of the dataset), and a `region = 'EU'` query throws away two thirds of the
+files before opening anything.
 
 ## Object storage
 
@@ -132,50 +155,102 @@ laptop or server.
 
 ```bash
 pytest tests/ -q
+# 35 passed
 ```
 
 The suite builds a small partitioned dataset in a temp dir and checks the engine's
 output against DuckDB reading the same files. DuckDB is the oracle for "what's the
-right answer," so correctness tests are just `engine == duckdb`. There are also
-direct asserts that pruning actually fires (N files skipped, N row-groups skipped,
-fewer bytes for a projected query).
+right answer," so correctness tests are just `engine == duckdb` — differential
+testing, not hand-written expected values.
+
+| file | what it pins down |
+|---|---|
+| `test_parser.py` | SQL → logical plan; non-`SELECT` is rejected |
+| `test_optimizer.py` | projection pushdown, predicate pushdown, partition/data predicate split |
+| `test_executor.py` | pruning actually fires (N files skipped, N row-groups skipped, fewer bytes projected) |
+| `test_nulls.py` | SQL NULL semantics survive the partial-aggregate → merge path |
+| `test_e2e.py` | `run_sql` / `explain_sql`, and parallel results == serial results |
+| `test_rendering.py` | a NULL in the UI reads `NULL`, not Python's `None` |
+
+Two classes of bug the suite exists to catch, both of which it has caught:
+
+- **Byte accounting.** `test_full_scan_reads_everything` asserts a query with
+  nothing to prune reads *exactly* 100% — same unit on both sides of the ratio,
+  pruned row-groups still in the denominator. That invariant found a bug where
+  every query looked ~1.5x better than it was.
+- **NULL semantics under parallelism.** `AVG`/`SUM` are reconstructed from
+  partial sums and counts so workers can aggregate independently. A group whose
+  every value is NULL gives `0/0`, and polars' `.sum()` returns `0` where SQL
+  says NULL. The fixture guarantees an all-NULL group (`tip` is NULL for every
+  wallet payment) and an all-NULL column, and the same query is run at
+  `max_workers=1` and `4` to prove the merge doesn't change the answer.
 
 ## Benchmark
 
 ```bash
-python scripts/benchmark.py --data ./data/trips --runs 3
+python scripts/benchmark.py --data ./data/trips --runs 7
 # add Postgres to include the load-then-query baseline:
 python scripts/benchmark.py --data ./data/trips \
   --postgres "host=localhost dbname=queryengine user=queryengine password=queryengine"
 ```
 
-Here's a real run on the sample dataset (~300k rows, median of 5):
+Here's a real run on the sample dataset (~300k rows, median of 7):
 
 ```
-query             engine        duckdb
-----------------------------------------------
-agg_by_region     32.5 ms       10.9 ms
-filtered_agg      57.2 ms       14.6 ms
-selective_scan    13.6 ms        6.6 ms
-partition_filter  11.5 ms        6.8 ms
-wide_group        50.7 ms       14.5 ms
+query             wall clock
+-----------------------------
+agg_by_region       68.5 ms
+filtered_agg       127.3 ms
+selective_scan      30.6 ms
+partition_filter    26.7 ms
+wide_group         109.6 ms
 ```
 
-DuckDB wins on raw speed and that's expected, it's a tuned C++ engine and this is
-Python driving PyArrow/Polars. The table that actually matters is what each query
-*read*:
+(`benchmark_results.json` in the repo root is the raw output of this exact run.)
+
+Treat those as order-of-magnitude only: on an unquiet laptop the same invocation
+varies by up to 2x run to run. The absolute numbers also move with the dataset —
+these are from a 300k-row, 15-file, 120-row-group sample, so most of each
+measurement is fixed overhead (footer reads, plan building, process setup)
+rather than scan work.
+
+The table that actually matters is what each query *read*. Unlike the timings,
+these are deterministic, byte-identical across runs:
 
 | query | bytes scanned | how |
 |---|---|---|
-| `COUNT(*) WHERE trip_id > 250000` | 277 KB / 1.67 MB (**~17%**) | 100 row-groups skipped on min/max stats |
-| `SUM(price) WHERE region='EU'` | 591 KB / 7.76 MB (**~8%**) | 10 of 15 files pruned by partition |
-| `GROUP BY region` | 3.2 MB / 10 MB (**~32%**) | only the two referenced columns read |
-| `GROUP BY region, payment` | 1.86 MB / 10 MB (**~19%**) | column projection |
+| `COUNT(*) WHERE trip_id > 299990` | 14 KB / 5.90 MB (**0.2%**) | 119 of 120 row-groups skipped on min/max stats |
+| `COUNT(*) WHERE trip_id > 250000` | 271 KB / 5.90 MB (**4.5%**) | 100 of 120 row-groups skipped |
+| `SUM(price) WHERE region='EU'` | 577 KB / 5.97 MB (**9.4%**) | 10 of 15 files pruned by partition |
+| `GROUP BY region, payment` | 106 KB / 5.90 MB (**1.8%**) | 1 of 7 columns read, and it's dictionary-encoded |
+| `GROUP BY region` | 85 KB / 5.90 MB (**1.4%**) | groups on a partition column, so no data column is referenced |
+| `COUNT(*)` | 85 KB / 5.90 MB (**1.4%**) | narrowest column in the file, read only to count rows |
 
-The selective filter opens 1 row-group out of 120, the partition filter never
-touches the US/APAC directories. The Postgres column (when you pass `--postgres`)
-counts the one-time COPY load against it, which is the honest version of the
-"no loading step" pitch, that load alone dwarfs every query above.
+The selective filter opens 1 row-group out of 120; the partition filter never
+touches the US/APAC directories. The `GROUP BY` rows have nothing to push down,
+so projection is the only lever and the ratio becomes "how wide is the column I
+asked for" — `payment` is a low-cardinality string that compresses to almost
+nothing.
+
+The last two rows are a deliberate choice. `COUNT(*)` and `GROUP BY region`
+reference no data column at all (`region` lives in the directory path), but a
+row count still has to come from somewhere, so exactly one column gets read.
+*Which* column is decided in physical planning from the footer's per-column
+compressed sizes: reading the first declared column instead — a wide monotonic
+`trip_id` — cost 1.59 MB for the identical answer, 19x more I/O. Pinned by
+`test_count_star_reads_the_narrowest_column`.
+
+The Postgres column (when you pass `--postgres`) counts the one-time COPY load
+against it, which is the honest version of the "no loading step" pitch — that
+load alone dwarfs every query above.
+
+Both sides of every ratio are compressed on-disk bytes. An earlier version of
+this table compared compressed `bytes_scanned` against *uncompressed*
+`bytes_total` and excluded pruned row-groups from the denominator, which
+flattered every number by roughly the compression ratio and hid row-group
+pruning entirely. Fixing it made the projection-only queries look worse and the
+pruning-heavy ones look dramatically better, which is the correct outcome: a
+full scan now reports exactly 100%.
 
 ## Layout
 
@@ -194,7 +269,7 @@ apps/queries/       QueryRun + Celery task + Redis stats cache
 apps/frontend/      htmx views and templates
 config/             Django project + Celery
 scripts/            seed_data, upload_minio, benchmark
-tests/              parser, optimizer, executor, e2e
+tests/              parser, optimizer, executor, nulls, rendering, e2e
 ```
 
 ## Deploying it for free

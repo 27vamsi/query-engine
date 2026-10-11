@@ -1,0 +1,59 @@
+{% comment %}
+Result table with a copy/export toolbar.
+
+ctx:
+  columns (list[str], required)   run.result_columns
+  rows    (list[dict], required)  run.result_preview
+  total     (int, optional)  rows_returned, when more rows exist than preview
+  export_id (str, optional)  id of a json_script tag holding {columns, rows};
+                             the export buttons only render when it is set
+  export_name (str, optional) download filename stem
+
+Cells go through dict_extras.cell, which turns a real SQL NULL into
+<span class="null">NULL</span> and NaN into NaN -- the engine's NULL semantics
+are invisible without it. That filter's output is pinned by
+tests/test_rendering.py and must not be reformatted here.
+{% endcomment %}
+{% load dict_extras %}
+{% if rows %}
+<div class="result-grid">
+  <div class="result-grid__bar">
+    <span>{{ rows|length }} row{{ rows|length|pluralize }}
+      {% if total and total > rows|length %}
+        <span class="muted">of {{ total }} returned</span>
+      {% endif %}
+    </span>
+    <span class="spacer"></span>
+    <span class="muted">{{ columns|length }} column{{ columns|length|pluralize }}</span>
+    {% if export_id %}
+    <button class="btn btn--sm btn--ghost" type="button" data-export="csv"
+            data-export-source="{{ export_id }}" data-export-name="{{ export_name }}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></svg>
+      CSV
+    </button>
+    <button class="btn btn--sm btn--ghost" type="button" data-export="json"
+            data-export-source="{{ export_id }}" data-export-name="{{ export_name }}">JSON</button>
+    {% endif %}
+  </div>
+  <div class="result-grid__scroll">
+    <table>
+      <thead>
+        <tr>
+          <th class="rownum" scope="col"><span class="sr-only">Row</span></th>
+          {% for c in columns %}<th scope="col">{{ c }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="rownum">{{ forloop.counter }}</td>
+          {% for c in columns %}<td>{{ row|get_item:c|cell }}</td>{% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+{% include "components/empty_state.html" with inline=True title="No rows" body="The query completed successfully and matched nothing. That is a result, not an error." %}
+{% endif %}

@@ -1,0 +1,48 @@
+{% comment %}
+htmx fragment: the optimized plan for some SQL, without executing it.
+
+ctx:
+  plan_mermaid (str, optional)
+  plan_text    (str, optional)
+  error        (str, optional)  the engine's own ParseError message
+
+Standalone-renderable. Returned with HTTP 200 even on a parse error: htmx
+does not swap 4xx/5xx by default, so a 400 here would look to the user like
+the Explain button did nothing at all.
+{% endcomment %}
+<div id="run-status">
+  {% if error %}
+  <div class="results__status">
+    <span class="pill error">invalid SQL</span>
+    <span class="muted">Nothing was executed.</span>
+  </div>
+  <div class="results__scroll">
+    <div class="errbox">
+      <div class="errbox__title">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01" stroke-linecap="round"/></svg>
+        The engine could not plan this query
+      </div>
+      <pre>{{ error }}</pre>
+    </div>
+    <p class="muted" style="margin-top:var(--sp-4);font-size:var(--fs-sm);max-width:72ch">
+      This is the parser's own message. Scope is a single-table
+      <code>SELECT</code> with <code>WHERE</code>, <code>GROUP BY</code>,
+      <code>ORDER BY</code> and <code>LIMIT</code> &mdash; see
+      <a href="{% url 'capabilities' %}">Capabilities</a> for exactly what is supported.
+    </p>
+  </div>
+  {% else %}
+  <div class="results__status">
+    <span class="pill pill--info pill--plain">explain only</span>
+    <span class="muted">Planned and optimized. No bytes were read.</span>
+  </div>
+  <div class="results__scroll">
+    <p class="muted" style="margin-bottom:var(--sp-4);font-size:var(--fs-sm);max-width:72ch">
+      The plan after the optimizer has run: projection pushdown, predicate pushdown
+      (split into partition vs data predicates) and filter removal have all been applied.
+      Run the query to find out how many bytes this plan actually avoids reading.
+    </p>
+    {% include "components/plan_diagram.html" with plan_mermaid=plan_mermaid plan_text=plan_text %}
+  </div>
+  {% endif %}
+</div>

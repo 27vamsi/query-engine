@@ -1,7 +1,7 @@
 {
   "engine": {
     "agg_by_region": {
-      "ms": 32.5,
+      "ms": 68.5,
       "metrics": {
         "total_files": 15,
         "files_scanned": 15,
@@ -10,12 +10,14 @@
         "row_groups_scanned": 120,
         "row_groups_pruned": 0,
         "bytes_scanned": 3211768,
-        "bytes_total": 10038584,
-        "rows_scanned": 300000
+        "bytes_total": 6190367,
+        "rows_scanned": 300000,
+        "columns_projected": 2,
+        "columns_total": 7
       }
     },
     "filtered_agg": {
-      "ms": 57.2,
+      "ms": 127.3,
       "metrics": {
         "total_files": 15,
         "files_scanned": 15,
@@ -23,13 +25,15 @@
         "total_row_groups": 120,
         "row_groups_scanned": 120,
         "row_groups_pruned": 0,
-        "bytes_scanned": 3117820,
-        "bytes_total": 10038584,
-        "rows_scanned": 300000
+        "bytes_scanned": 2790148,
+        "bytes_total": 6190367,
+        "rows_scanned": 300000,
+        "columns_projected": 3,
+        "columns_total": 7
       }
     },
     "selective_scan": {
-      "ms": 13.6,
+      "ms": 30.6,
       "metrics": {
         "total_files": 15,
         "files_scanned": 15,
@@ -38,12 +42,14 @@
         "row_groups_scanned": 20,
         "row_groups_pruned": 100,
         "bytes_scanned": 277512,
-        "bytes_total": 1673185,
-        "rows_scanned": 50000
+        "bytes_total": 6190367,
+        "rows_scanned": 50000,
+        "columns_projected": 1,
+        "columns_total": 7
       }
     },
     "partition_filter": {
-      "ms": 11.5,
+      "ms": 26.7,
       "metrics": {
         "total_files": 15,
         "files_scanned": 5,
@@ -52,12 +58,14 @@
         "row_groups_scanned": 40,
         "row_groups_pruned": 0,
         "bytes_scanned": 591264,
-        "bytes_total": 7761111,
-        "rows_scanned": 100000
+        "bytes_total": 6259257,
+        "rows_scanned": 100000,
+        "columns_projected": 1,
+        "columns_total": 7
       }
     },
     "wide_group": {
-      "ms": 50.7,
+      "ms": 109.6,
       "metrics": {
         "total_files": 15,
         "files_scanned": 15,
@@ -65,27 +73,29 @@
         "total_row_groups": 120,
         "row_groups_scanned": 120,
         "row_groups_pruned": 0,
-        "bytes_scanned": 1860253,
-        "bytes_total": 10038584,
-        "rows_scanned": 300000
+        "bytes_scanned": 1882179,
+        "bytes_total": 6190367,
+        "rows_scanned": 300000,
+        "columns_projected": 2,
+        "columns_total": 7
       }
     }
   },
   "duckdb": {
     "agg_by_region": {
-      "ms": 10.9
+      "ms": 19.3
     },
     "filtered_agg": {
-      "ms": 14.6
+      "ms": 26.8
     },
     "selective_scan": {
-      "ms": 6.6
+      "ms": 15.2
     },
     "partition_filter": {
-      "ms": 6.8
+      "ms": 10.2
     },
     "wide_group": {
-      "ms": 14.5
+      "ms": 29.4
     }
   }
 }

@@ -1,0 +1,76 @@
+{% comment %}
+Execution insights rail: what the query actually read, and why it got to read
+less than everything.
+
+ctx:
+  run     (QueryRun, required)
+  compact (bool, optional)  hide the waterfall/heatmap, for narrow rails
+
+Every number here comes from run.metrics, whose keys are fixed by
+ScanMetrics.as_dict(). Where a metric is absent the card says "Not reported"
+rather than 0.
+
+bytes_total is the dataset's compressed on-disk size: all row-groups including
+the pruned ones, plus the file size of files that were never opened. The bar
+is labelled literally so the denominator is never ambiguous.
+{% endcomment %}
+<div class="insights">
+
+  {% if run.status == 'success' and run.scan_ratio is not None %}
+  <div class="insights__block">
+    <div class="insights__label">Bytes scanned / dataset bytes</div>
+    <div class="callout {% if run.scan_ratio >= 90 %}callout--warn{% else %}callout--good{% endif %}">
+      <div class="big">{{ run.scan_ratio }}%</div>
+      <div class="muted" style="margin-top:var(--sp-2);font-size:var(--fs-sm);line-height:1.5">
+        <strong class="nums">{{ run.bytes_scanned|filesizeformat }}</strong> came off disk, out of
+        <strong class="nums">{{ run.bytes_total|filesizeformat }}</strong> of compressed
+        dataset bytes.
+      </div>
+      <div class="bar bar--thick" style="margin-top:var(--sp-3)">
+        <span style="width:{{ run.scan_ratio }}%"></span>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="insights__block">
+    <div class="insights__label">Execution</div>
+    <div class="metrics">
+      {% include "components/metric_card.html" with label="Duration" value=run.duration_ms unit=" ms" tone="accent" %}
+      {% include "components/metric_card.html" with label="Rows returned" value=run.rows_returned %}
+      {% include "components/metric_card.html" with label="Rows scanned" value=run.rows_scanned %}
+      {% include "components/metric_card.html" with label="Files pruned" value=run.files_pruned sub_num=run.metrics.total_files sub_label="files" %}
+      {% include "components/metric_card.html" with label="Row-groups pruned" value=run.row_groups_pruned sub_num=run.metrics.total_row_groups sub_label="row-groups" %}
+      {% include "components/metric_card.html" with label="Columns read" value=run.metrics.columns_projected sub_num=run.metrics.columns_total sub_label="columns" %}
+    </div>
+  </div>
+
+  {% if run.status == 'success' %}
+  <div class="insights__block">
+    <div class="insights__label">Why it read that much</div>
+    <ul class="notes">
+      {% for note in run.pruning_notes %}<li>{{ note }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if not compact %}
+    {% if run.scan_stages %}
+    <div class="insights__block">
+      <div class="insights__label">Where the bytes went</div>
+      {% include "components/scan_waterfall.html" with run=run %}
+    </div>
+    {% endif %}
+
+    {% if run.scan_map %}
+    <div class="insights__block">
+      <div class="insights__label">Row-group map
+        <span class="muted">({{ run.metrics.row_groups_scanned }} of
+          {{ run.metrics.total_row_groups }} read)</span>
+      </div>
+      {% include "components/scan_heatmap.html" with run=run %}
+    </div>
+    {% endif %}
+  {% endif %}
+
+</div>

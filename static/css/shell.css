@@ -1,0 +1,524 @@
+/* App shell: sidebar + topbar + page container, collapse and responsive. */
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--w-sidebar) minmax(0, 1fr);
+  min-height: 100vh;
+  transition: grid-template-columns var(--t-base) var(--ease);
+}
+
+.shell.is-collapsed {
+  grid-template-columns: var(--w-sidebar-collapsed) minmax(0, 1fr);
+}
+
+/* The mobile drawer backdrop. It lives inside .shell, which is a 2-column
+   grid, so it MUST stay out of flow at every width -- display:none here and
+   position:fixed in the <=1024px block below.
+
+   Without this base rule it was an in-flow div and therefore grid item #1:
+   it took the sidebar column, pushed .sidebar into the content column, and
+   wrapped the page content onto row 2 at sidebar width. The entire desktop
+   layout rendered in a 232px strip. Do not remove. */
+.scrim {
+  display: none;
+}
+
+/* --- Sidebar ------------------------------------------------------------- */
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sidebar);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-surface);
+  border-right: 1px solid var(--c-border);
+  overflow: hidden;
+}
+
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: var(--h-topbar);
+  padding: 0 var(--sp-4);
+  border-bottom: 1px solid var(--c-border);
+  flex: 0 0 auto;
+  color: var(--c-text);
+  text-decoration: none;
+}
+
+.sidebar__brand:hover {
+  text-decoration: none;
+  color: var(--c-text);
+}
+
+.sidebar__mark {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: linear-gradient(145deg, var(--c-accent), var(--c-violet));
+  color: #07090d;
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-md);
+  box-shadow: var(--sh-sm);
+}
+
+.sidebar__name {
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-md);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.sidebar__nav {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--sp-4) var(--sp-2) var(--sp-2);
+}
+
+.sidebar__group {
+  margin-bottom: var(--sp-5);
+}
+
+.sidebar__group-label {
+  padding: 0 var(--sp-3) var(--sp-2);
+  text-transform: uppercase;
+  letter-spacing: var(--track-caps);
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  color: var(--c-text-faint);
+  white-space: nowrap;
+}
+
+.navlink {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: 1px;
+  border-radius: var(--r-sm);
+  color: var(--c-text-dim);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background var(--t-fast) var(--ease),
+              color var(--t-fast) var(--ease);
+}
+
+.navlink:hover {
+  background: var(--c-panel-2);
+  color: var(--c-text);
+  text-decoration: none;
+}
+
+.navlink.is-active {
+  background: var(--c-accent-wash);
+  color: var(--c-accent-hi);
+}
+
+.navlink.is-active::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--sp-2));
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 0 var(--r-xs) var(--r-xs) 0;
+  background: var(--c-accent);
+}
+
+.navlink__icon {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  opacity: 0.85;
+}
+
+.navlink__icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.navlink__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.navlink__badge {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--c-text-faint);
+  background: var(--c-panel-2);
+  border-radius: var(--r-pill);
+  padding: 1px 6px;
+}
+
+.sidebar__foot {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--c-border);
+  padding: var(--sp-2);
+}
+
+.sidebar__toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  background: none;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--c-text-mute);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--t-fast) var(--ease),
+              color var(--t-fast) var(--ease);
+}
+
+.sidebar__toggle:hover {
+  background: var(--c-panel-2);
+  color: var(--c-text);
+}
+
+.sidebar__toggle svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  fill: none;
+  transition: transform var(--t-base) var(--ease);
+}
+
+.shell.is-collapsed .sidebar__toggle svg {
+  transform: rotate(180deg);
+}
+
+/* Collapsed state: icons only. Labels are removed from the a11y tree too,
+   so a screen reader does not announce an invisible duplicate. */
+.shell.is-collapsed .sidebar__name,
+.shell.is-collapsed .sidebar__group-label,
+.shell.is-collapsed .navlink__label,
+.shell.is-collapsed .navlink__badge,
+.shell.is-collapsed .sidebar__toggle span {
+  display: none;
+}
+
+.shell.is-collapsed .sidebar__brand,
+.shell.is-collapsed .navlink,
+.shell.is-collapsed .sidebar__toggle {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.shell.is-collapsed .sidebar__group {
+  margin-bottom: var(--sp-3);
+}
+
+/* --- Main column --------------------------------------------------------- */
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  height: var(--h-topbar);
+  padding: 0 var(--sp-6);
+  background: rgba(13, 17, 23, 0.85);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--c-border);
+  flex: 0 0 auto;
+}
+
+.topbar__left {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.topbar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 0 auto;
+}
+
+.topbar__burger {
+  display: none;
+  background: none;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  color: var(--c-text-dim);
+  padding: var(--sp-1) var(--sp-2);
+  cursor: pointer;
+  line-height: 1;
+}
+
+/* --- Breadcrumbs --------------------------------------------------------- */
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--fs-md);
+  color: var(--c-text-mute);
+  overflow: hidden;
+}
+
+.crumbs a {
+  color: var(--c-text-mute);
+  white-space: nowrap;
+}
+
+.crumbs a:hover {
+  color: var(--c-text);
+}
+
+.crumbs__sep {
+  color: var(--c-text-faint);
+  flex: 0 0 auto;
+}
+
+.crumbs__current {
+  color: var(--c-text);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Page container ------------------------------------------------------ */
+
+.page {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: var(--w-content-max);
+  margin: 0 auto;
+  padding: var(--sp-7) var(--sp-6) var(--sp-9);
+  min-width: 0;
+}
+
+/* The workspace is a fixed-height 3-pane app, not a scrolling document, so
+   it opts out of the page padding and max width entirely. */
+.page--flush {
+  max-width: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-5);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-6);
+}
+
+.page__heading {
+  min-width: 0;
+}
+
+.page__title {
+  font-size: var(--fs-2xl);
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.page__subtitle {
+  margin: var(--sp-2) 0 0;
+  color: var(--c-text-mute);
+  font-size: var(--fs-md);
+  max-width: 76ch;
+  line-height: var(--lh-snug);
+}
+
+.page__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+/* --- Section grids ------------------------------------------------------- */
+
+.stack      { display: flex; flex-direction: column; gap: var(--sp-5); }
+.stack--sm  { gap: var(--sp-3); }
+.stack--lg  { gap: var(--sp-7); }
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.row--between {
+  justify-content: space-between;
+}
+
+.grid {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* Asymmetric split used by Overview and Query Detail: main content plus a
+   narrower insights rail. */
+.grid--split {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  align-items: start;
+}
+
+.grid--auto {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+
+.grid--cards {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+/* --- Responsive ---------------------------------------------------------- */
+
+@media (max-width: 1240px) {
+  .grid--split { grid-template-columns: minmax(0, 1fr); }
+  .grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 1024px) {
+  .shell,
+  .shell.is-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Off-canvas sidebar below the tablet breakpoint. */
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: var(--w-sidebar);
+    transform: translateX(-100%);
+    transition: transform var(--t-base) var(--ease);
+    box-shadow: var(--sh-lg);
+  }
+
+  .shell.is-open .sidebar {
+    transform: translateX(0);
+  }
+
+  /* Collapsed-mode icon-only rules must not apply to the drawer. */
+  .shell.is-collapsed .sidebar__name,
+  .shell.is-collapsed .sidebar__group-label,
+  .shell.is-collapsed .navlink__label,
+  .shell.is-collapsed .navlink__badge,
+  .shell.is-collapsed .sidebar__toggle span {
+    display: revert;
+  }
+
+  .shell.is-collapsed .sidebar__brand,
+  .shell.is-collapsed .navlink,
+  .shell.is-collapsed .sidebar__toggle {
+    justify-content: flex-start;
+    padding-left: var(--sp-3);
+    padding-right: var(--sp-3);
+  }
+
+  .topbar__burger { display: block; }
+  .sidebar__foot { display: none; }
+
+  .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-sidebar) - 1);
+    background: rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--t-base) var(--ease);
+  }
+
+  .shell.is-open .scrim {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .grid--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .topbar { padding: 0 var(--sp-4); gap: var(--sp-2); }
+  .page { padding: var(--sp-5) var(--sp-4) var(--sp-8); }
+
+  /* .topbar__right never shrinks, so on a phone the ancestor crumbs squeezed
+     the page name down to a few letters ("Ove..."). Drop the ancestors and
+     keep only the current page -- its parents are one tap away in the drawer,
+     and knowing which page you are on matters more than how you got here. */
+  .crumbs a,
+  .crumbs__sep { display: none; }
+
+  /* Same squeeze from the other side: .topbar__opt marks a topbar action that
+     only duplicates a sidebar nav destination, so it is the first thing to go
+     when the bar runs out of room. Never put a page's only action here.
+
+     Scoped to .topbar__right on purpose: these are .btn elements, and
+     components.css loads after this file, so a bare .topbar__opt would tie on
+     specificity with `.btn { display: inline-flex }` and lose on source order. */
+  .topbar__right .topbar__opt { display: none; }
+
+  .grid--2,
+  .grid--3,
+  .grid--4,
+  .grid--cards,
+  .grid--auto {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page__title { font-size: var(--fs-xl); }
+
+  .page__header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-4);
+  }
+}
+
+@media print {
+  .sidebar, .topbar, .page__actions { display: none; }
+  .shell { grid-template-columns: minmax(0, 1fr); }
+}

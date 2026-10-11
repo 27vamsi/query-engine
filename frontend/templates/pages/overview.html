@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Overview · Query Engine{% endblock %}
+
+{% block breadcrumbs %}
+  <span class="crumbs__current">Overview</span>
+{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+
+{# --- The pitch. A visitor has to get the product from this block alone. --- #}
+<div class="hero">
+  <div class="hero__eyebrow">Analytical SQL over Parquet</div>
+  <h1 class="hero__title">
+    SQL over Parquet, with the optimizer turned inside out
+  </h1>
+  <p class="hero__body">
+    Point it at a prefix of Parquet files on local disk or in S3-compatible object
+    storage, hand it SQL, and it parses the query, prunes the partitions, columns and
+    row-groups it can prove it doesn't need, and fans the remaining scan across a
+    process pool. There is no load step and no copy of the data.
+  </p>
+  <p class="hero__lede">
+    Athena will tell you it scanned 4.2&nbsp;MB. It won't tell you <em>which</em> files
+    it skipped or <em>why</em>. This does: every run reports the files it never opened,
+    the row-groups it ruled out on min/max statistics, the columns it left on disk, and
+    the query plan it actually executed.
+  </p>
+  <div class="hero__actions">
+    <a class="btn btn--lg btn--primary" href="{% url 'workspace' %}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 9-14 9z"/></svg>
+      Open the SQL workspace
+    </a>
+    <a class="btn btn--lg btn--ghost" href="{% url 'capabilities' %}">
+      Engine capabilities
+    </a>
+  </div>
+  {% if stats.scan_ratio is not None %}
+  <p class="hero__note">
+    Across the last {{ stats.window }} runs it read
+    <strong class="t-good">{{ stats.scan_ratio }}%</strong> of the bytes those queries
+    would have needed without pruning &mdash;
+    <strong>{{ stats.bytes_saved|filesizeformat }}</strong> of compressed data never
+    left the disk.
+  </p>
+  {% endif %}
+</div>
+
+{# --- Headline metrics. Absent values render "Not reported", never 0. --- #}
+<div class="metrics metrics--4">
+  {% include "components/metric_card.html" with label="Queries run" value=stats.total_runs sub=runs_sub %}
+  {% include "components/metric_card.html" with label="Median latency" value=stats.median_ms unit="ms" sub=latency_sub %}
+  {% include "components/metric_card.html" with label="Dataset bytes read" value=stats.scan_ratio unit="%" sub=scan_sub tone="good" %}
+  {% include "components/metric_card.html" with label="Ran without error" value=stats.success_pct unit="%" sub=success_sub %}
+</div>
+
+{% if not runs %}
+  {% url 'workspace' as workspace_url %}
+  {% include "components/empty_state.html" with title="Nothing has run yet" body="Every number on this page is derived from real runs, so the page stays empty until a query executes. The workspace ships one-click example queries for each pruning mechanism." action_url=workspace_url action_label="Open the SQL workspace" %}
+{% else %}
+
+<div class="grid grid--2">
+  <div class="panel">
+    <div class="panel__head">
+      <h2>Latency</h2>
+      <span class="muted">last {{ stats.window }} successful runs</span>
+    </div>
+    {% if duration_json %}
+      <div class="chart chart--sm">
+        <canvas data-chart="duration" data-src="duration-data" role="img"
+                aria-label="Line chart of query duration in milliseconds across the most recent successful runs."></canvas>
+      </div>
+      <p class="panel__foot">
+        Fastest {{ stats.fastest_ms }} ms &middot; median {{ stats.median_ms }} ms
+        &middot; slowest {{ stats.slowest_ms }} ms. Wall-clock, planning included.
+      </p>
+    {% else %}
+      {% include "components/empty_state.html" with inline=True title="No timings yet" body="Durations appear once a query completes successfully." %}
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <div class="panel__head">
+      <h2>Bytes read vs bytes avoided</h2>
+      <span class="muted">per run</span>
+    </div>
+    {% if scan_json %}
+      <div class="chart chart--sm">
+        <canvas data-chart="scan" data-src="scan-data" role="img"
+                aria-label="Stacked bar chart of compressed bytes read against bytes avoided for each recent run."></canvas>
+      </div>
+      <p class="panel__foot">
+        Each column is the full compressed size of the dataset that run targeted;
+        the blue part is what actually came off disk. Both sides are compressed bytes.
+      </p>
+    {% else %}
+      {% include "components/empty_state.html" with inline=True title="No byte accounting yet" body="Scan metrics are recorded per successful run." %}
+    {% endif %}
+  </div>
+</div>
+
+{# --- The three mechanisms, named, in the order they apply. --- #}
+<div class="panel">
+  <div class="panel__head">
+    <h2>How a query avoids reading data</h2>
+    <a class="btn btn--sm btn--ghost" href="{% url 'capabilities' %}">Details</a>
+  </div>
+  <div class="grid grid--3">
+    <div class="step">
+      <span class="step__num">1</span>
+      <h3 class="step__title">Prune whole files</h3>
+      <p class="step__body">
+        Hive-style partition values are parsed out of the directory path, so a predicate
+        on a partition column eliminates entire files <em>before any file is opened</em>.
+        A pruned file costs zero I/O &mdash; not a cheap read, no read at all.
+      </p>
+    </div>
+    <div class="step">
+      <span class="step__num">2</span>
+      <h3 class="step__title">Skip row-groups</h3>
+      <p class="step__body">
+        Every Parquet footer carries min/max statistics per row-group. The engine reads
+        footers only, tests the predicate against those ranges, and skips any row-group
+        it can prove holds no match before decompressing a byte.
+      </p>
+    </div>
+    <div class="step">
+      <span class="step__num">3</span>
+      <h3 class="step__title">Read only the columns asked for</h3>
+      <p class="step__body">
+        Parquet is columnar, so unreferenced columns are never touched. A
+        <code>COUNT(*)</code> resolves to the narrowest column on disk rather than the
+        first declared one &mdash; a 19x difference on the sample dataset.
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid--split">
+  <div class="panel panel--flush">
+    <div class="panel__head">
+      <h2>Recent runs</h2>
+      <a class="btn btn--sm btn--ghost" href="{% url 'history' %}">Full history</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Run</th>
+            <th scope="col">SQL</th>
+            <th scope="col">Status</th>
+            <th scope="col" class="td-num">Duration</th>
+            <th scope="col" class="td-num">Read</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in runs %}
+          <tr>
+            <td><a href="{% url 'query_run' r.id %}">#{{ r.id }}</a></td>
+            <td class="td-sql" title="{{ r.sql }}">{{ r.sql|truncatechars:52 }}</td>
+            <td>{% include "components/status_pill.html" with status=r.status %}</td>
+            <td class="td-num">
+              {% if r.duration_ms is not None %}{{ r.duration_ms }} ms
+              {% else %}<span class="muted">&mdash;</span>{% endif %}
+            </td>
+            <td class="td-num">
+              {% if r.scan_ratio is not None %}
+                <span class="{% if r.scan_ratio < 25 %}t-good{% elif r.scan_ratio >= 90 %}t-warn{% endif %}">{{ r.scan_ratio }}%</span>
+              {% else %}<span class="muted">&mdash;</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <div class="panel__head">
+        <h2>Datasets</h2>
+        <a class="btn btn--sm btn--ghost" href="{% url 'datasets' %}">All</a>
+      </div>
+      {% if datasets %}
+      <div class="stack stack--sm">
+        {% for d in datasets %}
+        <a class="ds-row" href="{% url 'dataset_detail' d.id %}">
+          <span class="ds-row__name">{{ d.name }}</span>
+          <span class="ds-row__meta">
+            {{ d.file_count }} file{{ d.file_count|pluralize }} &middot;
+            {{ d.total_bytes|filesizeformat }} compressed
+          </span>
+          <span class="ds-row__tags">
+            {% for p in d.partition_columns %}<span class="tag tag--partition">{{ p }}</span>{% endfor %}
+          </span>
+        </a>
+        {% endfor %}
+      </div>
+      <p class="panel__foot">
+        Registering a dataset reads one footer to infer the schema and parses partition
+        keys from the paths.
+      </p>
+      {% else %}
+        {% include "components/empty_state.html" with inline=True title="No datasets registered" hint="python manage.py register_dataset trips ./data/trips" %}
+      {% endif %}
+    </div>
+
+    <div class="panel panel--accent">
+      <div class="panel__head"><h2>What it runs</h2></div>
+      <p class="prose">
+        Single-table <code>SELECT</code> with <code>WHERE</code>, <code>GROUP BY</code>,
+        <code>ORDER BY</code> and <code>LIMIT</code>, over Parquet on local disk or in
+        S3-compatible object storage. The depth is in the scan path, not the SQL surface.
+      </p>
+      <p class="prose">
+        Every result is differentially tested against DuckDB reading the same files, so
+        correctness is verified rather than asserted &mdash; and the
+        <a href="{% url 'performance' %}">Performance page</a> breaks down the I/O each
+        query actually paid for.
+      </p>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{{ duration_json|json_script:"duration-data" }}
+{{ scan_json|json_script:"scan-data" }}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/charts.js' %}"></script>
+{% endblock %}
