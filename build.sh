@@ -22,6 +22,16 @@ python manage.py register_dataset trips ./data/trips \
 
 # Real executions against the real dataset, so the deployed site opens with
 # measured numbers instead of empty states.
-python manage.py seed_demo_runs --passes 3
+#
+# Two guards, because this is the one step that runs arbitrary query execution
+# during a build:
+#   ENGINE_MAX_WORKERS=1  no process pool at all here. Seeding is throughput-
+#                         insensitive, and a build container is the worst place
+#                         to be forking interpreters that each load pyarrow.
+#   timeout + || true     a stuck or failing seed must not hold the deploy
+#                         hostage. The site renders empty states and still
+#                         works; a 10-minute hang means it never starts at all.
+ENGINE_MAX_WORKERS=1 timeout 300 python manage.py seed_demo_runs --passes 3 || \
+  echo "seed_demo_runs did not complete; continuing with empty history."
 
 python manage.py collectstatic --noinput

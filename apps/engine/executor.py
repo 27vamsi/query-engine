@@ -15,6 +15,7 @@ the same shape as a distributed shuffle, just on one box.
 
 from __future__ import annotations
 
+import multiprocessing as mp
 import os
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
@@ -228,11 +229,22 @@ def _map(worker, args, max_workers):
     if workers <= 1 or len(args) == 1:
         return [worker(a) for a in args]
     try:
-        with ProcessPoolExecutor(max_workers=workers) as pool:
+        with ProcessPoolExecutor(max_workers=workers, mp_context=_SPAWN) as pool:
             return list(pool.map(worker, args))
     except Exception:
         # Fall back to serial execution if the pool cannot start.
         return [worker(a) for a in args]
+
+
+# "spawn", not Linux's default "fork". polars keeps a rayon thread pool alive in
+# this process, and fork() copies its mutexes in whatever state they happened to
+# be in -- the child then blocks forever on a lock no thread exists to release.
+# That deadlock is silent (no exception, so the fallback above never fires) and
+# only shows up once something has warmed the thread pool, which is why the
+# first few queries in a batch succeed and a later one hangs. spawn starts the
+# child from a clean interpreter, so there are no inherited locks to wait on.
+# Windows and macOS already default to spawn, so this only changes Linux.
+_SPAWN = mp.get_context("spawn")
 
 
 def _buf(b: bytes):
