@@ -36,8 +36,11 @@ services:
         value: "2"
       - key: SEED_ROWS
         value: "300000"
-      # ALLOWED_HOSTS and CSRF_TRUSTED_ORIGINS are derived in settings/prod.py
-      # from RENDER_EXTERNAL_HOSTNAME, which Render injects automatically.
+      # The *.onrender.com host is derived in settings/prod.py from
+      # RENDER_EXTERNAL_HOSTNAME, which Render injects automatically; this adds
+      # the custom domain on top. CSRF_TRUSTED_ORIGINS follows from both.
+      - key: DJANGO_ALLOWED_HOSTS
+        value: "query-engine.vamsimarella.com"
 
 # --- Scaling up later -----------------------------------------------------
 # To move off SQLite and run queries on a real worker, uncomment the database
